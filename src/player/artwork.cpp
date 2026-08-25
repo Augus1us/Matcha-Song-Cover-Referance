@@ -20,6 +20,12 @@ ID3D11Texture2D*          s_artTex = nullptr;
 ID3D11ShaderResourceView* s_atmosphereSrv = nullptr;
 ID3D11Texture2D*          s_atmosphereTex = nullptr;
 float                     s_atmosphereFade = 1.f;
+// Artwork mode draws the real full-resolution cover, which would otherwise end
+// in a hard horizontal edge where the art stops and the card continues. This
+// second, alpha-ramped copy of the atmosphere is laid over the cover's lower
+// third so the art dissolves into the card instead of being cut off.
+ID3D11ShaderResourceView* s_artworkFadeSrv = nullptr;
+ID3D11Texture2D*          s_artworkFadeTex = nullptr;
 int s_artW = 0, s_artH = 0;
 
 void ReleaseArtTexture() {
@@ -30,6 +36,8 @@ void ReleaseArtTexture() {
 void ReleaseAtmosphereTexture() {
     if (s_atmosphereSrv) { s_atmosphereSrv->Release(); s_atmosphereSrv = nullptr; }
     if (s_atmosphereTex) { s_atmosphereTex->Release(); s_atmosphereTex = nullptr; }
+    if (s_artworkFadeSrv) { s_artworkFadeSrv->Release(); s_artworkFadeSrv = nullptr; }
+    if (s_artworkFadeTex) { s_artworkFadeTex->Release(); s_artworkFadeTex = nullptr; }
 }
 
 bool UploadArtTexture(ID3D11Device* dev, const media::NowPlaying& np) {
@@ -145,6 +153,44 @@ void BuildAtmosphereTexture(ID3D11Device* dev, const media::NowPlaying& np) {
         dev->CreateShaderResourceView(s_atmosphereTex, &svd, &s_atmosphereSrv);
         s_atmosphereFade = 0.f;
     }
+
+    // Same blurred atmosphere, but lifted and desaturated so it reads as haze
+    // rather than a second image, and ramped from fully transparent at 40% of
+    // the height to opaque by 67%. Smoothstep on the ramp -- a linear alpha
+    // leaves a visible band where the gradient starts.
+    std::vector<uint8_t> artworkFade = atmosphere;
+    for (int y = 0; y < kAtmosphereSide; ++y) {
+        const float ny = (float)y / (float)(kAtmosphereSide - 1);
+        const float t = std::clamp((ny - 0.40f) / 0.27f, 0.f, 1.f);
+        const float eased = t * t * (3.f - 2.f * t);
+        const uint8_t alpha = (uint8_t)(255.f * eased);
+        for (int x = 0; x < kAtmosphereSide; ++x) {
+            uint8_t* px = artworkFade.data() +
+                ((size_t)y * kAtmosphereSide + x) * 4u;
+            for (int ch = 0; ch < 3; ++ch)
+                px[ch] = (uint8_t)std::min(255,
+                    (int)std::lround(px[ch] * 1.12f + 12.f));
+            // BGRA: index 2 is red, 0 is blue.
+            const float luma = px[2] * 0.2126f + px[1] * 0.7152f + px[0] * 0.0722f;
+            const float lowTonePull = std::max(0.f, 190.f - luma) * 0.03f;
+            for (int ch = 0; ch < 3; ++ch) {
+                const float desat = px[ch] + (luma - px[ch]) * 0.50f;
+                px[ch] = (uint8_t)std::clamp(
+                    (int)std::lround(desat - lowTonePull), 0, 190);
+            }
+            px[3] = alpha;
+        }
+    }
+    D3D11_SUBRESOURCE_DATA fadeData = {};
+    fadeData.pSysMem = artworkFade.data();
+    fadeData.SysMemPitch = kAtmosphereSide * 4;
+    if (SUCCEEDED(dev->CreateTexture2D(&td, &fadeData, &s_artworkFadeTex))) {
+        D3D11_SHADER_RESOURCE_VIEW_DESC fadeView = {};
+        fadeView.Format = td.Format;
+        fadeView.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        fadeView.Texture2D.MipLevels = 1;
+        dev->CreateShaderResourceView(s_artworkFadeTex, &fadeView, &s_artworkFadeSrv);
+    }
 }
 
 }  // namespace
@@ -173,6 +219,10 @@ ImTextureID AlbumArtTexture() {
 
 ImTextureID AlbumAtmosphereTexture() {
     return (ImTextureID)(uintptr_t)s_atmosphereSrv;
+}
+
+ImTextureID AlbumArtworkFadeTexture() {
+    return (ImTextureID)(uintptr_t)s_artworkFadeSrv;
 }
 
 float& AlbumAtmosphereFadeRef() {

@@ -14,6 +14,10 @@ void UpdateAlbumArt(const media::NowPlaying& nowPlaying);
 bool HasAlbumArt();
 ImTextureID AlbumArtTexture();
 ImTextureID AlbumAtmosphereTexture();
+// Alpha-ramped copy of the atmosphere, laid over the cover's lower third
+// in artwork mode so the art dissolves into the card instead of ending
+// on a hard edge. Null until album art has been uploaded.
+ImTextureID AlbumArtworkFadeTexture();
 float& AlbumAtmosphereFadeRef();
 ImU32 LyricHighlightColor();
 void DrawPlayerBackground(ImDrawList* drawList, const ImVec2& position,

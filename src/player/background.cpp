@@ -487,10 +487,16 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
                                 ImVec2(0.f, 0.f), ImVec2(1.f, 1.f),
                                 IM_COL32_WHITE, rounding - 1.f);
             const float fadeTop = artMax.y - std::min(112.f, artExtent * 0.37f);
+            // The alpha-ramped atmosphere copy carries the dissolve now, so the
+            // flat darkening below it is only a whisper -- at the old strength
+            // the two stacked and the bottom of every cover went muddy.
+            if (ImTextureID fade = AlbumArtworkFadeTexture())
+                dl->AddImage(fade, artMin, artMax,
+                             ImVec2(0.f, 0.f), ImVec2(1.f, 1.f));
             dl->AddRectFilledMultiColor(
                 ImVec2(artMin.x, fadeTop), artMax,
                 IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
-                Color(p.bottom, 0.88f), Color(p.bottom, 0.88f));
+                IM_COL32(2, 3, 5, 12), IM_COL32(2, 3, 5, 12));
         }
     }
 
