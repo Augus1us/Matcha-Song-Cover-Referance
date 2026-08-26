@@ -54,6 +54,7 @@
     <ClCompile Include="..\src\player\header.cpp" />
     <ClCompile Include="..\src\player\lyrics.cpp" />
     <ClCompile Include="..\src\player\player.cpp" />
+    <ClCompile Include="..\src\player\svg_path.cpp" />
     <ClCompile Include="..\third_party\imgui\imgui.cpp" />
     <ClCompile Include="..\third_party\imgui\imgui_draw.cpp" />
     <ClCompile Include="..\third_party\imgui\imgui_tables.cpp" />

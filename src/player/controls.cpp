@@ -1,6 +1,7 @@
 #include "media.h"
 #include "music_player_host.h"
 #include "music_player_internal.h"
+#include "music_player_icons.h"
 
 #include <algorithm>
 #include <initializer_list>
@@ -17,62 +18,43 @@ namespace native_music_player::detail {
 // centre with no gap and no bar.
 //
 // kind: 0 = previous, 1 = play, 2 = pause, 3 = next.
+// Transport marks come straight from the SVGs in assets/icons (Bootstrap Icons,
+// MIT). Their corners are rounded by small arcs in the path data; the previous
+// hand-placed triangles had sharp points, which is what made the row look spiky
+// beside the real player.
+//
+// kind: 0 = previous, 1 = play, 2 = pause, 3 = next.
 void DrawMediaGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
-    // Apple's transport marks are wider than tall; a full-height triangle looks
-    // stubby next to the real thing.
-    const float h = r * 0.86f;
-    // Apple leaves a hairline between the two marks. Sharing a vertex fuses
-    // them into one arrow with a notch, which is a different symbol.
-    const float g = r * 0.16f;
+    // r is a half-extent; the SVG viewBox spans the whole icon box.
+    const float box = r * 2.35f;
     switch (kind) {
-    case 0:
-        dl->AddTriangleFilled(ImVec2(c.x - g,     c.y - h), ImVec2(c.x - g,     c.y + h),
-                              ImVec2(c.x - r,     c.y), col);
-        dl->AddTriangleFilled(ImVec2(c.x + r,     c.y - h), ImVec2(c.x + r,     c.y + h),
-                              ImVec2(c.x + g,     c.y), col);
-        break;
-    case 1: {
-        // Nudged right of centre: a play triangle centred on its bounding box
-        // reads as sitting too far left, because its visual mass is at the base.
-        const float px = c.x - r * 0.18f;
-        dl->AddTriangleFilled(ImVec2(px,         c.y - h * 1.06f),
-                              ImVec2(px,         c.y + h * 1.06f),
-                              ImVec2(px + r * 1.7f, c.y), col);
-        break;
-    }
-    case 2: {
-        const float bw = std::max(2.f, r * 0.36f);      // bar width
-        const float gap = r * 0.30f;
-        dl->AddRectFilled(ImVec2(c.x - gap - bw, c.y - h * 1.06f),
-                          ImVec2(c.x - gap,      c.y + h * 1.06f), col, bw * 0.42f);
-        dl->AddRectFilled(ImVec2(c.x + gap,      c.y - h * 1.06f),
-                          ImVec2(c.x + gap + bw, c.y + h * 1.06f), col, bw * 0.42f);
-        break;
-    }
-    case 3:
-        dl->AddTriangleFilled(ImVec2(c.x + g,     c.y - h), ImVec2(c.x + g,     c.y + h),
-                              ImVec2(c.x + r,     c.y), col);
-        dl->AddTriangleFilled(ImVec2(c.x - r,     c.y - h), ImVec2(c.x - r,     c.y + h),
-                              ImVec2(c.x - g,     c.y), col);
-        break;
+    case 0: DrawSvgIcon(dl, icons::kPrevPath, c, box, icons::kPrevViewBox, col); break;
+    case 1: DrawSvgIcon(dl, icons::kPlayPath, c, box, icons::kPlayViewBox, col); break;
+    case 2: DrawSvgIcon(dl, icons::kPausePath, c, box, icons::kPauseViewBox, col); break;
+    case 3: DrawSvgIcon(dl, icons::kNextPath, c, box, icons::kNextViewBox, col); break;
     }
 }
 
+// Utility marks: fullscreen and the lyrics bubble come from the same SVG set.
+// Shuffle and repeat have no filled equivalent there, so they stay as Lucide
+// geometry (https://lucide.dev, ISC) -- stroked, at a matching weight.
+//
+// kind: 0 = fullscreen, 1 = shuffle, 2 = repeat, 3 = lyrics.
 void DrawUtilityGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
-    // No icon-font path any more. This used to prefer host font slot 2 (Segoe
-    // MDL2 codepoints) when the host supplied one and fall back to vectors
-    // otherwise, so the SAME build drew different icons depending on where it
-    // ran -- MDL2 marks inside Cover, hand-drawn ones in the preview. Drawing
-    // Lucide geometry unconditionally keeps every host identical.
-    // ---------------------------------------------------------------------
-    // Icons below are Lucide (https://lucide.dev), ISC licensed, transcribed
-    // from the project's own SVG path data rather than approximated by hand.
-    // The earlier shapes were drawn from memory and did not match any real
-    // icon set -- the shuffle in particular collapsed into something closer to
-    // a Bluetooth mark. Lucide authors on a 24x24 grid with stroke-width 2 and
-    // round caps/joins, so the mapping below is a straight transcription.
-    // ---------------------------------------------------------------------
-    const float k = std::max(2.4f, r * 0.92f) / 12.f;   // 24x24 -> icon box
+    const float box = r * 2.35f;
+    if (kind == 0) {
+        DrawSvgIcon(dl, icons::kFullscreenPath, c, box, icons::kFullscreenViewBox, col);
+        return;
+    }
+    if (kind == 3) {
+        // The soft bubble is a stroked outline plus filled quote marks, so its
+        // two subpaths take different operations rather than both being filled.
+        StrokeSvgPath(dl, icons::kLyricsPath0, c, box, icons::kLyricsViewBox, col,
+                      std::max(1.15f, r * 0.17f));
+        DrawSvgIcon(dl, icons::kLyricsPath1, c, box, icons::kLyricsViewBox, col);
+        return;
+    }
+    const float k = std::max(2.4f, r * 0.92f) / 12.f;   // 24x24 grid
     const float stroke = std::max(1.15f, r * 0.19f);
     auto P = [&](float x, float y) {
         return ImVec2(c.x + (x - 12.f) * k, c.y + (y - 12.f) * k);
@@ -80,20 +62,10 @@ void DrawUtilityGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
     auto poly = [&](std::initializer_list<ImVec2> pts) {
         for (const ImVec2& p : pts) dl->PathLineTo(p);
         dl->PathStroke(col, 0, stroke);
-        // Round caps: Lucide uses stroke-linecap="round", and without dots on
-        // the ends short segments look chopped at this size.
-        const ImVec2* first = pts.begin();
-        dl->AddCircleFilled(*first, stroke * 0.5f, col, 8);
+        dl->AddCircleFilled(*pts.begin(), stroke * 0.5f, col, 8);
         dl->AddCircleFilled(*(pts.end() - 1), stroke * 0.5f, col, 8);
     };
-    switch (kind) {
-    case 0:   // lucide "maximize-2"
-        poly({P(15, 3), P(21, 3), P(21, 9)});
-        poly({P(21, 3), P(14, 10)});
-        poly({P(3, 21), P(10, 14)});
-        poly({P(9, 21), P(3, 21), P(3, 15)});
-        break;
-    case 1:   // lucide "shuffle"
+    if (kind == 1) {          // lucide "shuffle"
         poly({P(18, 2), P(22, 6), P(18, 10)});
         poly({P(18, 14), P(22, 18), P(18, 22)});
         poly({P(2, 18), P(3.97f, 18), P(5.7f, 17.6f), P(7.27f, 16.3f),
@@ -101,21 +73,11 @@ void DrawUtilityGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
         poly({P(2, 6), P(3.97f, 6), P(5.9f, 6.5f), P(7.57f, 8.2f)});
         poly({P(22, 18), P(15.96f, 18), P(14.1f, 17.6f), P(12.66f, 16.2f),
               P(12.3f, 15.75f)});
-        break;
-    case 2:   // lucide "repeat"
+    } else {                  // lucide "repeat"
         poly({P(17, 2), P(21, 6), P(17, 10)});
         poly({P(3, 11), P(3, 10), P(3.6f, 8), P(5, 6.6f), P(7, 6), P(21, 6)});
         poly({P(7, 22), P(3, 18), P(7, 14)});
         poly({P(21, 13), P(21, 14), P(20.4f, 16), P(19, 17.4f), P(17, 18), P(3, 18)});
-        break;
-    case 3: { // lyrics: rounded bubble with a tail and three dots
-        const ImVec2 bMin = P(3, 5), bMax = P(21, 17);
-        dl->AddRect(bMin, bMax, col, 4.f * k * 1.4f, 0, stroke);
-        poly({P(9, 17), P(9.5f, 21), P(13.5f, 17)});
-        for (int i = -1; i <= 1; ++i)
-            dl->AddCircleFilled(P(12 + i * 4.2f, 11), std::max(0.8f, stroke * 0.62f), col, 8);
-        break;
-    }
     }
 }
 

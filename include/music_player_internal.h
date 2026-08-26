@@ -3,6 +3,8 @@
 #include "media.h"
 #include "imgui.h"
 
+#include <vector>
+
 namespace native_music_player::detail {
 
 // Every layout constant in the player is authored against the mode's BASE size
@@ -38,6 +40,14 @@ void DrawPlayerBackground(ImDrawList* drawList, const ImVec2& position,
                           bool artworkView, bool fullScreen, bool haveArt,
                           float hoverAmount, float uiScale);
 void ReleaseVisualAssets();
+
+// Fill an SVG path (from music_player_icons.h) centred on `center`, scaled so
+// the viewBox spans `size` pixels.
+void FlattenSvgPath(const char* d, std::vector<std::vector<ImVec2>>& outSubpaths);
+void DrawSvgIcon(ImDrawList* drawList, const char* pathData, ImVec2 center,
+                 float size, float viewBox, ImU32 color);
+void StrokeSvgPath(ImDrawList* drawList, const char* pathData, ImVec2 center,
+                   float size, float viewBox, ImU32 color, float thickness);
 
 void DrawMediaGlyph(ImDrawList* drawList, ImVec2 center, float radius,
                     int kind, ImU32 color);
