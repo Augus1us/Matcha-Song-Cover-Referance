@@ -234,8 +234,12 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
     const bool lyricsChanged = g_layoutRevision != g_cacheRevision;
     const float S = ctx.uiScale;
     float lyricsTop = ctx.fullScreen ? wp.y + ws.y * 0.055f : wp.y + Px(82.f);
+    // 112 used to reserve a strip for the Sync pill and its dots. That control
+    // is gone, but the reservation stayed, leaving a tall empty band between
+    // the last lyric and the progress bar. The panel now runs down to just
+    // above the bar.
     float lyricsBottom = ctx.fullScreen ? wp.y + ws.y - Px(52.f)
-                                        : wp.y + ws.y - Px(112.f);
+                                        : wp.y + ws.y - Px(76.f);
     float lyricsHeight = std::max(Px(80.f), lyricsBottom - lyricsTop);
     float lyricX = ctx.fullScreen ? ctx.fullLyricsX : wp.x + Px(17.f);
     float lyricWidth = ctx.fullScreen ? ctx.fullLyricsWidth : ws.x - Px(39.f);
