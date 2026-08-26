@@ -227,9 +227,17 @@ MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
     const MusicRgb b = dominant[2];
     const MusicRgb c = dominant[1];
     MusicPalette result;
-    result.top = ToVec4(Tone(Mix(overall, a, 0.78f), 0.23f, 1.12f, 0.18f));
+    // Surface brightness follows the cover instead of being pinned dark.
+    //
+    // These were fixed HSV values of 0.23 and 0.15, so the card came out the
+    // same near-black whatever the artwork was: a bright pink cover rendered as
+    // dark maroon at about a third of the art's own luminance, where the
+    // reference sits close to the cover's level and reads light. Saturation is
+    // also pulled in a little so the result is a soft wash rather than a block
+    // of colour.
+    result.top = ToVec4(Tone(Mix(overall, a, 0.78f), 0.52f, 0.88f, 0.15f));
     result.bottom = ToVec4(Tone(
-        Mix(Mix(overall, b, 0.62f), c, 0.18f), 0.15f, 1.12f, 0.16f));
+        Mix(Mix(overall, b, 0.62f), c, 0.18f), 0.42f, 0.88f, 0.13f));
     result.accentA = ToVec4(Tone(a, 0.66f, 1.18f, 0.30f));
     result.accentB = ToVec4(Tone(b, 0.58f, 1.16f, 0.26f));
     result.accentC = ToVec4(Tone(c, 0.61f, 1.16f, 0.26f));
@@ -514,12 +522,16 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
 
     DrawRoundedGradient(dl,
         ImVec2(min.x, min.y), ImVec2(max.x, max.y),
-        IM_COL32(0, 0, 0, fullScreen ? 112 : (artworkView ? 0 : 6)),
-        IM_COL32(0, 0, 0, fullScreen ? 90 : (artworkView ? 0 : 10)),
-        IM_COL32(0, 0, 0, fullScreen ? 36 :
-            (artworkView ? 0 : (compactSurface ? 14 : 28))),
-        IM_COL32(0, 0, 0, fullScreen ? 54 :
-            (artworkView ? 0 : (compactSurface ? 20 : 36))),
+        // Much lighter black wash than before. The bottom corners carried
+        // alpha 28-36 (112/90 in fullscreen), which put a heavy vignette across
+        // the lower half of the card -- the reference has no such shading, its
+        // surface is close to even top to bottom.
+        IM_COL32(0, 0, 0, fullScreen ? 34 : (artworkView ? 0 : 4)),
+        IM_COL32(0, 0, 0, fullScreen ? 28 : (artworkView ? 0 : 6)),
+        IM_COL32(0, 0, 0, fullScreen ? 16 :
+            (artworkView ? 0 : (compactSurface ? 8 : 12))),
+        IM_COL32(0, 0, 0, fullScreen ? 22 :
+            (artworkView ? 0 : (compactSurface ? 10 : 15))),
         rounding);
 
     if (compactSurface && hover > 0.001f)
