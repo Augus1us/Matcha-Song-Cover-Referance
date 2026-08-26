@@ -232,15 +232,20 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
     const ImVec2 ws = ctx.windowSize;
 
     const bool lyricsChanged = g_layoutRevision != g_cacheRevision;
-    float lyricsTop = ctx.fullScreen ? wp.y + ws.y * 0.055f : wp.y + 82.f;
-    float lyricsBottom = ctx.fullScreen ? wp.y + ws.y - 52.f : wp.y + ws.y - 112.f;
-    float lyricsHeight = std::max(80.f, lyricsBottom - lyricsTop);
-    float lyricX = ctx.fullScreen ? ctx.fullLyricsX : wp.x + 17.f;
-    float lyricWidth = ctx.fullScreen ? ctx.fullLyricsWidth : ws.x - 39.f;
+    const float S = ctx.uiScale;
+    float lyricsTop = ctx.fullScreen ? wp.y + ws.y * 0.055f : wp.y + Px(82.f);
+    float lyricsBottom = ctx.fullScreen ? wp.y + ws.y - Px(52.f)
+                                        : wp.y + ws.y - Px(112.f);
+    float lyricsHeight = std::max(Px(80.f), lyricsBottom - lyricsTop);
+    float lyricX = ctx.fullScreen ? ctx.fullLyricsX : wp.x + Px(17.f);
+    float lyricWidth = ctx.fullScreen ? ctx.fullLyricsWidth : ws.x - Px(39.f);
+    // Text tracks the card: the compact sizes were derived from ws.x already,
+    // but were clamped to a fixed pixel band so they stopped growing well before
+    // the card did.
     float inactiveSize = ctx.fullScreen
-        ? 21.f : std::clamp(ws.x * 0.046f, 13.5f, 15.2f);
+        ? 21.f * S : std::clamp(ws.x * 0.046f, 13.5f * S, 15.2f * S);
     float activeSize = ctx.fullScreen
-        ? 26.f : std::clamp(ws.x * 0.056f, 16.5f, 18.5f);
+        ? 26.f * S : std::clamp(ws.x * 0.056f, 16.5f * S, 18.5f * S);
     const ImVec2 viewMin(lyricX, lyricsTop);
     const ImVec2 viewMax(lyricX + lyricWidth, lyricsTop + lyricsHeight);
 
@@ -275,7 +280,7 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                 // Gap between separate lyrics; the leading inside a wrapped
                 // lyric comes from kLyricLeading above.
                 g_lineHeights[i] = wrapped * layoutSize * kLyricLeading +
-                    (ctx.fullScreen ? 23.f : 18.f);
+                    Px(ctx.fullScreen ? 23.f : 18.f);
                 g_contentHeight += g_lineHeights[i];
             }
         }
@@ -392,11 +397,20 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                 float alpha = distanceAlpha + (1.f - distanceAlpha) * focus;
                 alpha = std::min(1.f, alpha + hover * 0.18f);
                 float size = inactiveSize + (activeSize - inactiveSize) * focus;
-                ImFont* font = focus > 0.48f ? ctx.bold : ctx.regular;
+                // Cross-fade the weight across the middle of the transition.
+                // Switching fonts outright at focus > 0.48 made the line pop
+                // from regular to bold in a single frame while its size was
+                // still easing -- the size animated, the weight jumped, and the
+                // change read as broken rather than smooth.
+                ImFont* font = focus > 0.5f ? ctx.bold : ctx.regular;
+                const float blendLo = 0.30f, blendHi = 0.70f;
+                float weightBlend = std::clamp(
+                    (focus - blendLo) / (blendHi - blendLo), 0.f, 1.f);
+                const bool crossFading = focus > blendLo && focus < blendHi;
                 float depthOffset = ctx.fullScreen ? 0.f :
-                    std::min(5.f, distance * 1.1f) * (1.f - focus);
-                ImVec2 textPos(lyricX + depthOffset + hover * 3.f,
-                               y - focus * 1.5f);
+                    std::min(5.f, distance * 1.1f) * (1.f - focus) * S;
+                ImVec2 textPos(lyricX + depthOffset + hover * 3.f * S,
+                               y - focus * 1.5f * S);
 
                 if (hover > 0.01f) {
                     dl->AddRectFilled(
@@ -426,9 +440,20 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                 }
                 const float textAlpha = ctx.fullScreen && !isActive && !lineHovered
                     ? alpha * 0.48f : alpha;
-                DrawWrappedLyric(dl, font, size, textPos,
-                    IM_COL32(255, 255, 255, (int)(255.f * textAlpha)),
-                    g_cache[i].text.c_str(), lyricWidth - depthOffset);
+                if (crossFading) {
+                    DrawWrappedLyric(dl, ctx.regular, size, textPos,
+                        IM_COL32(255, 255, 255,
+                            (int)(255.f * textAlpha * (1.f - weightBlend))),
+                        g_cache[i].text.c_str(), lyricWidth - depthOffset);
+                    DrawWrappedLyric(dl, ctx.bold, size, textPos,
+                        IM_COL32(255, 255, 255,
+                            (int)(255.f * textAlpha * weightBlend)),
+                        g_cache[i].text.c_str(), lyricWidth - depthOffset);
+                } else {
+                    DrawWrappedLyric(dl, font, size, textPos,
+                        IM_COL32(255, 255, 255, (int)(255.f * textAlpha)),
+                        g_cache[i].text.c_str(), lyricWidth - depthOffset);
+                }
 
                 if (isActive && !ctx.fullScreen) {
                     const double lineStart = g_cache[i].timeSec;

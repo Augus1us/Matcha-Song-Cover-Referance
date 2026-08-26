@@ -98,31 +98,33 @@ void DrawArtworkBackButton(const HeaderContext& ctx) {
     ImDrawList* dl = ctx.drawList;
     const ImVec2 wp = ctx.windowPosition;
     const ImVec2 ws = ctx.windowSize;
-    const ImVec2 backMin(wp.x + 5.f, wp.y + 13.f);
+    const float S = ctx.uiScale;
+    const float bw = Px(30.f), bh = Px(28.f);
+    const ImVec2 backMin(wp.x + Px(5.f), wp.y + Px(13.f));
     ImGui::SetCursorScreenPos(backMin);
-    ImGui::InvisibleButton("##art_back", ImVec2(30.f, 28.f));
+    ImGui::InvisibleButton("##art_back", ImVec2(bw, bh));
     const bool backHovered = ImGui::IsItemHovered();
     const bool backClicked = ImGui::IsItemClicked();
     if (backHovered) {
-        dl->AddRectFilled(backMin, ImVec2(backMin.x + 30.f, backMin.y + 28.f),
-                          IM_COL32(8, 10, 14, 158), 9.f);
-        dl->AddRect(backMin, ImVec2(backMin.x + 30.f, backMin.y + 28.f),
-                    IM_COL32(255, 255, 255, 86), 9.f, 0, 1.f);
+        dl->AddRectFilled(backMin, ImVec2(backMin.x + bw, backMin.y + bh),
+                          IM_COL32(8, 10, 14, 158), Px(9.f));
+        dl->AddRect(backMin, ImVec2(backMin.x + bw, backMin.y + bh),
+                    IM_COL32(255, 255, 255, 86), Px(9.f), 0, 1.f);
     }
     const ImU32 arrow = IM_COL32(255, 255, 255, backHovered ? 245 : 92);
-    dl->AddLine(ImVec2(backMin.x + 18.f, backMin.y + 8.f),
-                ImVec2(backMin.x + 12.f, backMin.y + 14.f), arrow, 1.7f);
-    dl->AddLine(ImVec2(backMin.x + 12.f, backMin.y + 14.f),
-                ImVec2(backMin.x + 18.f, backMin.y + 20.f), arrow, 1.7f);
+    dl->AddLine(ImVec2(backMin.x + Px(18.f), backMin.y + Px(8.f)),
+                ImVec2(backMin.x + Px(12.f), backMin.y + Px(14.f)), arrow, 1.7f * S);
+    dl->AddLine(ImVec2(backMin.x + Px(12.f), backMin.y + Px(14.f)),
+                ImVec2(backMin.x + Px(18.f), backMin.y + Px(20.f)), arrow, 1.7f * S);
 
-    const ImVec2 aaCenter(wp.x + ws.x - 27.f, wp.y + 31.f);
-    ImGui::SetCursorScreenPos(ImVec2(aaCenter.x - 15.f, aaCenter.y - 14.f));
-    ImGui::InvisibleButton("##art_lyrics", ImVec2(30.f, 28.f));
+    const ImVec2 aaCenter(wp.x + ws.x - Px(27.f), wp.y + Px(31.f));
+    ImGui::SetCursorScreenPos(ImVec2(aaCenter.x - bw * 0.5f, aaCenter.y - bh * 0.5f));
+    ImGui::InvisibleButton("##art_lyrics", ImVec2(bw, bh));
     const bool aaHovered = ImGui::IsItemHovered();
     const bool aaClicked = ImGui::IsItemClicked();
     const bool lyricsVisible = ctx.showLyrics && *ctx.showLyrics;
-    const ImVec2 aaSize = music_host::Measure(ctx.bold, 15.f, "Aa");
-    music_host::DrawText(dl, ctx.bold, 15.f,
+    const ImVec2 aaSize = music_host::Measure(ctx.bold, 15.f * S, "Aa");
+    music_host::DrawText(dl, ctx.bold, 15.f * S,
         ImVec2(aaCenter.x - aaSize.x * 0.5f,
                aaCenter.y - aaSize.y * 0.5f),
         IM_COL32(255, 255, 255,
@@ -137,8 +139,9 @@ void DrawCompactHeader(const HeaderContext& ctx) {
     const ImVec2 ws = ctx.windowSize;
     const bool compact = ctx.compact;
     const bool showLyrics = ctx.showLyrics && *ctx.showLyrics;
-    const float artSz = compact ? 48.f : (showLyrics ? 44.f : 48.f);
-    const ImVec2 artMin(wp.x + 10.f, wp.y + 12.f);
+    const float S = ctx.uiScale;
+    const float artSz = Px(compact ? 48.f : (showLyrics ? 44.f : 48.f));
+    const ImVec2 artMin(wp.x + Px(10.f), wp.y + Px(12.f));
     const ImVec2 artMax(artMin.x + artSz, artMin.y + artSz);
     bool artHovered = false;
     bool artClicked = false;
@@ -153,53 +156,50 @@ void DrawCompactHeader(const HeaderContext& ctx) {
             ImGui::GetID("##press"), artClicked);
         ImGui::PopID();
     }
-    const float inset = (1.f - std::clamp(artPress, 0.90f, 1.04f)) * 8.f;
+    const float inset = (1.f - std::clamp(artPress, 0.90f, 1.04f)) * 8.f * S;
     const ImVec2 artDrawMin(artMin.x + inset, artMin.y + inset);
     const ImVec2 artDrawMax(artMax.x - inset, artMax.y - inset);
     if (ctx.haveArt) {
-        dl->AddRectFilled(ImVec2(artDrawMin.x + 2.f, artDrawMin.y + 4.f),
-                          ImVec2(artDrawMax.x + 2.f, artDrawMax.y + 4.f),
-                          IM_COL32(0, 0, 0, 88), 8.f);
+        dl->AddRectFilled(ImVec2(artDrawMin.x + Px(2.f), artDrawMin.y + Px(4.f)),
+                          ImVec2(artDrawMax.x + Px(2.f), artDrawMax.y + Px(4.f)),
+                          IM_COL32(0, 0, 0, 88), Px(8.f));
         dl->AddImageRounded(AlbumArtTexture(),
                             artDrawMin, artDrawMax, ImVec2(0, 0), ImVec2(1, 1),
-                            IM_COL32_WHITE, 8.f);
+                            IM_COL32_WHITE, Px(8.f));
         dl->AddRect(artDrawMin, artDrawMax,
                     IM_COL32(255, 255, 255, artHovered ? 78 : 34),
-                    8.f, 0, 1.f);
+                    Px(8.f), 0, 1.f);
         if (artHovered) {
             dl->AddRectFilled(artDrawMin, artDrawMax,
-                              IM_COL32(0, 0, 0, 58), 9.f);
+                              IM_COL32(0, 0, 0, 58), Px(9.f));
             const ImVec2 c((artDrawMin.x + artDrawMax.x) * 0.5f,
                            (artDrawMin.y + artDrawMax.y) * 0.5f);
             const ImU32 icon = IM_COL32(255, 255, 255, 225);
-            dl->AddLine(ImVec2(c.x - 7.f, c.y - 3.f),
-                        ImVec2(c.x - 7.f, c.y - 7.f), icon, 1.4f);
-            dl->AddLine(ImVec2(c.x - 7.f, c.y - 7.f),
-                        ImVec2(c.x - 3.f, c.y - 7.f), icon, 1.4f);
-            dl->AddLine(ImVec2(c.x + 7.f, c.y + 3.f),
-                        ImVec2(c.x + 7.f, c.y + 7.f), icon, 1.4f);
-            dl->AddLine(ImVec2(c.x + 7.f, c.y + 7.f),
-                        ImVec2(c.x + 3.f, c.y + 7.f), icon, 1.4f);
+            const float e = Px(7.f), i3 = Px(3.f);
+            dl->AddLine(ImVec2(c.x - e, c.y - i3), ImVec2(c.x - e, c.y - e), icon, 1.4f * S);
+            dl->AddLine(ImVec2(c.x - e, c.y - e), ImVec2(c.x - i3, c.y - e), icon, 1.4f * S);
+            dl->AddLine(ImVec2(c.x + e, c.y + i3), ImVec2(c.x + e, c.y + e), icon, 1.4f * S);
+            dl->AddLine(ImVec2(c.x + e, c.y + e), ImVec2(c.x + i3, c.y + e), icon, 1.4f * S);
         }
         if (artClicked && ctx.artworkView) *ctx.artworkView = true;
     } else {
-        dl->AddRectFilled(artMin, artMax, IM_COL32(255, 255, 255, 18), 9.f);
+        dl->AddRectFilled(artMin, artMax, IM_COL32(255, 255, 255, 18), Px(9.f));
         ImVec2 c(artMin.x + artSz * 0.5f, artMin.y + artSz * 0.5f);
         DrawNotPlayingIcon(dl, c, IM_COL32(255, 255, 255, 115), 1.f);
     }
 
-    const float tx = artMax.x + (compact ? 9.f : 6.f);
-    const float availW = wp.x + ws.x - tx - 9.f;
+    const float tx = artMax.x + Px(compact ? 9.f : 6.f);
+    const float availW = wp.x + ws.x - tx - Px(9.f);
     const std::string titleShown = Ellipsize(ctx.title ? ctx.title : "",
-                                              ctx.bold, 12.f, availW);
-    music_host::DrawText(dl, ctx.bold, 12.f,
-        ImVec2(tx, wp.y + (compact ? 14.f : 15.f)),
+                                              ctx.bold, 12.f * S, availW);
+    music_host::DrawText(dl, ctx.bold, 12.f * S,
+        ImVec2(tx, wp.y + Px(compact ? 14.f : 15.f)),
         IM_COL32(255, 255, 255, 245), titleShown.c_str());
     if (ctx.artist && ctx.artist[0]) {
         const std::string artistShown = Ellipsize(ctx.artist,
-                                                    ctx.regular, 10.f, availW);
-        music_host::DrawText(dl, ctx.regular, 10.f,
-            ImVec2(tx, wp.y + (compact ? 29.f : 32.f)),
+                                                    ctx.regular, 10.f * S, availW);
+        music_host::DrawText(dl, ctx.regular, 10.f * S,
+            ImVec2(tx, wp.y + Px(compact ? 29.f : 32.f)),
             IM_COL32(255, 255, 255, 174), artistShown.c_str());
     }
 }

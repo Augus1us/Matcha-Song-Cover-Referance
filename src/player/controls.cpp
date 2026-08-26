@@ -157,14 +157,15 @@ void DrawTransportControls(const TransportContext& ctx) {
     const bool compactMusic = ctx.compact;
     const bool artworkView = *ctx.artworkView;
     const bool showLyrics = *ctx.showLyrics;
+    const float S = ctx.uiScale;
 
-    const float barY = fullScreen ? wp.y + ws.y - 103.f
-        : (compactMusic ? wp.y + ws.y - 63.f
-                        : (artworkView ? wp.y + ws.y - 94.f
-                                       : wp.y + ws.y - 59.f));
-    const float barThickness = fullScreen ? 2.5f : 4.f;
-    const float leftInset = compactMusic ? 16.f : (artworkView ? 7.f : 13.f);
-    const float rightInset = compactMusic ? 16.f : (artworkView ? 13.f : 8.f);
+    const float barY = fullScreen ? wp.y + ws.y - Px(103.f)
+        : (compactMusic ? wp.y + ws.y - Px(63.f)
+                        : (artworkView ? wp.y + ws.y - Px(78.f)
+                                       : wp.y + ws.y - Px(59.f)));
+    const float barThickness = Px(fullScreen ? 2.5f : 4.f);
+    const float leftInset = Px(compactMusic ? 16.f : (artworkView ? 7.f : 13.f));
+    const float rightInset = Px(compactMusic ? 16.f : (artworkView ? 13.f : 8.f));
     ImVec2 barMin(fullScreen ? ctx.fullColumnX : wp.x + leftInset, barY),
            barMax(fullScreen ? ctx.fullColumnX + ctx.fullColumnWidth : wp.x + ws.x - rightInset,
                   barY + barThickness);
@@ -172,8 +173,8 @@ void DrawTransportControls(const TransportContext& ctx) {
     double displayPosition = ctx.position;
     float displayProgress = ctx.progress;
     ImGui::PushID("music_timeline");
-    ImGui::SetCursorScreenPos(ImVec2(barMin.x, barY - 6.f));
-    ImGui::InvisibleButton("##seek", ImVec2(barMax.x - barMin.x, 14.f));
+    ImGui::SetCursorScreenPos(ImVec2(barMin.x, barY - Px(6.f)));
+    ImGui::InvisibleButton("##seek", ImVec2(barMax.x - barMin.x, Px(14.f)));
     if (ImGui::IsItemActive() && ctx.duration > 0.0) {
         const float pointer = std::clamp(
             (ImGui::GetIO().MousePos.x - barMin.x) /
@@ -197,7 +198,7 @@ void DrawTransportControls(const TransportContext& ctx) {
     if (ctx.duration > 0.0) {
         const float thumbX = barMin.x + (barMax.x - barMin.x) * displayProgress;
         dl->AddCircleFilled(ImVec2(thumbX, barY + barThickness * 0.5f),
-                            fullScreen ? 1.9f : (compactMusic ? 2.15f : 2.8f),
+                            (fullScreen ? 1.9f : (compactMusic ? 2.15f : 2.8f)) * S,
                             IM_COL32(255, 255, 255, 240), 18);
     }
 
@@ -208,29 +209,38 @@ void DrawTransportControls(const TransportContext& ctx) {
     fmt(displayPosition, pb, sizeof(pb));
     fmt(std::max(0.0, ctx.duration - displayPosition), remaining, sizeof(remaining));
     std::snprintf(rb, sizeof(rb), "-%s", remaining);
-    const float timeSize = compactMusic ? 9.5f : (fullScreen ? 9.f : 10.f);
-    music_host::DrawText(dl, ctx.regular, timeSize, ImVec2(barMin.x, barY + 6),
+    const float timeSize = (compactMusic ? 9.5f : (fullScreen ? 9.f : 10.f)) * S;
+    const float timeY = barY + Px(6.f);
+    music_host::DrawText(dl, ctx.regular, timeSize, ImVec2(barMin.x, timeY),
         IM_COL32(255, 255, 255, 136), pb);
     music_host::DrawText(dl, ctx.regular, timeSize,
-        ImVec2(barMax.x - music_host::Measure(ctx.regular, timeSize, rb).x, barY + 6),
+        ImVec2(barMax.x - music_host::Measure(ctx.regular, timeSize, rb).x, timeY),
         IM_COL32(255, 255, 255, 136), rb);
     const char* status = "Lossless";
-    const float statusTextSize = compactMusic ? 10.f : (fullScreen ? 9.f : 10.5f);
+    const float statusTextSize = (compactMusic ? 10.f : (fullScreen ? 9.f : 10.5f)) * S;
     ImVec2 statusSize = music_host::Measure(ctx.bold, statusTextSize, status);
     music_host::DrawText(dl, ctx.bold, statusTextSize,
-        ImVec2((barMin.x + barMax.x - statusSize.x) * 0.5f, barY + 6.f),
+        ImVec2((barMin.x + barMax.x - statusSize.x) * 0.5f, timeY),
         IM_COL32(255, 255, 255, 172), status);
 
-    const float cy = fullScreen ? barY + 34.f
-        : (compactMusic ? wp.y + ws.y - 23.f
-                        : (artworkView ? wp.y + ws.y - 35.f
-                                       : wp.y + ws.y - 20.f));
+    const float cy = fullScreen ? barY + Px(34.f)
+        : (compactMusic ? wp.y + ws.y - Px(23.f)
+                        : (artworkView ? wp.y + ws.y - Px(31.f)
+                                       : wp.y + ws.y - Px(20.f)));
     float cx = fullScreen ? (barMin.x + barMax.x) * 0.5f
         : wp.x + ws.x * (compactMusic ? 0.48f : 0.5f);
-    const float controlSpacing = compactMusic ? 37.f
-        : (fullScreen ? 46.f : (artworkView ? 69.f : 35.f));
-    const float primaryRadius = compactMusic ? 12.f : (fullScreen ? 16.f : 15.f);
-    const float secondaryRadius = compactMusic ? 9.5f : (fullScreen ? 13.f : 13.f);
+    // Spacing is capped by the width actually available, not just scaled: the
+    // row also carries the utility glyphs at each end, and at narrow widths the
+    // fixed 35-69px spacing pushed next/repeat into each other. Reserving room
+    // for the outer glyphs and dividing what's left keeps them apart at every
+    // size instead of overlapping once the card is small.
+    const float outerReserve = Px(compactMusic ? 30.f : 56.f);
+    const float usable = std::max(60.f, ws.x - outerReserve * 2.f);
+    const float wantSpacing = (compactMusic ? 37.f
+        : (fullScreen ? 46.f : (artworkView ? 69.f : 35.f))) * S;
+    const float controlSpacing = std::min(wantSpacing, usable * 0.5f * 0.62f);
+    const float primaryRadius = (compactMusic ? 12.f : (fullScreen ? 16.f : 15.f)) * S;
+    const float secondaryRadius = (compactMusic ? 9.5f : (fullScreen ? 13.f : 13.f)) * S;
     struct Ctl { float dx; int kind; } ctls[3] = {
         {-controlSpacing, 0}, {0, -1}, {controlSpacing, 3}
     };
@@ -254,13 +264,14 @@ void DrawTransportControls(const TransportContext& ctx) {
             if (hv > 0.01f)
                 dl->AddCircleFilled(ImVec2(bx, cy), primaryRadius,
                                     IM_COL32(255, 255, 255, (int)(18 * hv)), 20);
-            DrawMediaGlyph(dl, ImVec2(bx, cy), 7.3f * bnc, kind,
+            DrawMediaGlyph(dl, ImVec2(bx, cy), 7.3f * S * bnc, kind,
                            IM_COL32(255, 255, 255, (int)(225 + 30 * hv)));
         } else {
             if (hv > 0.01f)
                 dl->AddCircleFilled(ImVec2(bx, cy), secondaryRadius,
                                     IM_COL32(255, 255, 255, (int)(22 * hv)), 20);
-            DrawMediaGlyph(dl, ImVec2(bx, cy), (compactMusic ? 4.2f : 5.5f) * bnc, kind,
+            DrawMediaGlyph(dl, ImVec2(bx, cy),
+                           (compactMusic ? 4.2f : 5.5f) * S * bnc, kind,
                            IM_COL32(255, 255, 255, (int)(185 + 55 * hv)));
         }
         if (clk) {
@@ -274,18 +285,19 @@ void DrawTransportControls(const TransportContext& ctx) {
     auto utilityButton = [&](const char* id, const ImVec2& center, int icon,
                              bool selected) {
         ImGui::PushID(id);
-        ImGui::SetCursorScreenPos(ImVec2(center.x - 10.f, center.y - 10.f));
-        ImGui::InvisibleButton("##utility", ImVec2(20.f, 20.f));
+        const float hit = Px(10.f);
+        ImGui::SetCursorScreenPos(ImVec2(center.x - hit, center.y - hit));
+        ImGui::InvisibleButton("##utility", ImVec2(hit * 2.f, hit * 2.f));
         const bool hovered = ImGui::IsItemHovered();
         const bool clicked = ImGui::IsItemClicked();
         const float press = music_host::animation::ClickBounce(
             ImGui::GetID("##utility_press"), clicked);
         if ((hovered || selected) && !(fullScreen && selected)) {
-            dl->AddCircleFilled(center, 10.f * press,
+            dl->AddCircleFilled(center, Px(10.f) * press,
                                 IM_COL32(255, 255, 255, selected ? 30 : 16), 16);
         }
         DrawUtilityGlyph(dl, center,
-                         (compactMusic ? 5.5f : (fullScreen ? 5.7f : 6.4f)) * press,
+                         (compactMusic ? 5.5f : (fullScreen ? 5.7f : 6.4f)) * S * press,
                          icon,
                          IM_COL32(255, 255, 255,
                                   selected ? 226 : (hovered ? 196 : 132)));
@@ -297,28 +309,43 @@ void DrawTransportControls(const TransportContext& ctx) {
     bool shuffleClicked = false;
     bool repeatClicked = false;
     bool lyricsClicked = false;
+    // Shuffle and repeat are anchored to the TRANSPORT ROW, not to the card
+    // edges. They used to sit at fixed insets (wp.x + 75, ws.x - 70) while the
+    // row stayed centred, so on a narrow card the row grew out to meet them and
+    // next/repeat drew on top of each other. Placing them one gap outside the
+    // outermost transport button makes an overlap geometrically impossible, and
+    // the clamp keeps them inside the card when it is very small.
+    // One even step between all five marks: shuffle | prev | play | next |
+    // repeat sit at cx + k*controlSpacing. Using a smaller side gap put shuffle
+    // and repeat much closer to prev/next than prev/next were to play, so the
+    // row read as three groups instead of one evenly spaced set.
+    const float sideGap = controlSpacing;
+    const float edgeInset = Px(compactMusic ? 18.f : 20.f);
+    const float shuffleX = std::max(wp.x + edgeInset, cx - controlSpacing - sideGap);
+    const float repeatX = std::min(wp.x + ws.x - edgeInset,
+                                   cx + controlSpacing + sideGap);
     if (artworkView) {
-        shuffleClicked = utilityButton(
-            "shuffle_toggle", ImVec2(wp.x + 20.f, cy), 1, ctx.shuffleActive);
-        repeatClicked = utilityButton(
-            "repeat_toggle", ImVec2(wp.x + ws.x - 26.f, cy),
-            2, ctx.repeatActive);
+        shuffleClicked = utilityButton("shuffle_toggle", ImVec2(shuffleX, cy),
+                                       1, ctx.shuffleActive);
+        repeatClicked = utilityButton("repeat_toggle", ImVec2(repeatX, cy),
+                                      2, ctx.repeatActive);
     } else {
         fullScreenClicked = !fullScreen && utilityButton(
-            "fullscreen_toggle", ImVec2(wp.x + 19.f, cy), 0, false);
+            "fullscreen_toggle", ImVec2(wp.x + edgeInset, cy), 0, false);
         shuffleClicked = utilityButton(
-            "shuffle_toggle", ImVec2(fullScreen ? barMin.x + 3.f
-                                                 : wp.x + (compactMusic ? 80.f : 75.f), cy),
+            "shuffle_toggle",
+            ImVec2(fullScreen ? barMin.x + Px(3.f)
+                              : std::max(wp.x + edgeInset + Px(24.f), shuffleX), cy),
             1, ctx.shuffleActive);
         repeatClicked = utilityButton(
-            "repeat_toggle", ImVec2(fullScreen ? barMax.x - 7.f
-                                                : wp.x + ws.x - (compactMusic ? 80.f : 70.f), cy),
+            "repeat_toggle",
+            ImVec2(fullScreen ? barMax.x - Px(7.f)
+                              : std::min(wp.x + ws.x - edgeInset - Px(24.f), repeatX), cy),
             2, ctx.repeatActive);
         lyricsClicked = utilityButton(
-            "lyrics_toggle", ImVec2(fullScreen ? wp.x + 14.f
-                                                 : wp.x + ws.x - (compactMusic ? 20.f : 18.f),
-                                      fullScreen ? wp.y + ws.y - 20.f : cy), 3,
-            showLyrics);
+            "lyrics_toggle",
+            ImVec2(fullScreen ? wp.x + Px(14.f) : wp.x + ws.x - edgeInset,
+                   fullScreen ? wp.y + ws.y - Px(20.f) : cy), 3, showLyrics);
     }
 
     if (fullScreenClicked) {

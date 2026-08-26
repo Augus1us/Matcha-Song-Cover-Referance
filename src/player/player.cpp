@@ -29,6 +29,22 @@ struct WindowState {
     bool fullScreenPosValid = false;
 };
 
+float g_uiScale = 1.0f;
+
+}  // namespace
+
+namespace detail {
+float UiScale() { return g_uiScale; }
+void SetUiScale(float scale) { g_uiScale = std::clamp(scale, 0.6f, 2.4f); }
+float Px(float v) {
+    const float scaled = v * g_uiScale;
+    // Keep hairlines visible: rounding a 1px rule at 0.8 scale to 0 erases it.
+    return scaled < 1.f && v > 0.f ? 1.f : std::round(scaled);
+}
+}  // namespace detail
+
+namespace {
+
 WindowState& State() {
     static WindowState s;
     return s;
@@ -191,27 +207,38 @@ void DrawMusicPlayer() {
 
     ImVec2 wp = ImGui::GetWindowPos();
     ImVec2 ws = ImGui::GetWindowSize();
+    // Resize is uniform, so width alone defines the scale for the whole card.
+    detail::SetUiScale(desiredSize.x > 1.f ? ws.x / desiredSize.x : 1.f);
+    const bool resizing = std::abs(ws.x - st.lastSize.x) > 0.5f ||
+                          std::abs(ws.y - st.lastSize.y) > 0.5f;
     st.lastSize = ws;
     st.previousMode = mode;
 
-    ImVec2 clampedPos(
-        std::clamp(wp.x, vp->WorkPos.x + 8.f,
-            std::max(vp->WorkPos.x + 8.f,
-                     vp->WorkPos.x + vp->WorkSize.x - ws.x - 8.f)),
-        std::clamp(wp.y, vp->WorkPos.y + 8.f,
-            std::max(vp->WorkPos.y + 8.f,
-                     vp->WorkPos.y + vp->WorkSize.y - ws.y - 8.f)));
-    if (std::abs(clampedPos.x - wp.x) > 0.5f ||
-        std::abs(clampedPos.y - wp.y) > 0.5f) {
-        ImGui::SetWindowPos(clampedPos);
-        wp = clampedPos;
+    // Only keep the card on screen when it is NOT being resized. This clamp ran
+    // every frame, so growing the card near a screen edge pushed its position
+    // back to keep the far edge inside the viewport -- the card appeared to walk
+    // away from the cursor while dragging the grip, and shrinking never undid
+    // it. While resizing, the top-left stays exactly where the user put it.
+    if (!resizing) {
+        ImVec2 clampedPos(
+            std::clamp(wp.x, vp->WorkPos.x + 8.f,
+                std::max(vp->WorkPos.x + 8.f,
+                         vp->WorkPos.x + vp->WorkSize.x - ws.x - 8.f)),
+            std::clamp(wp.y, vp->WorkPos.y + 8.f,
+                std::max(vp->WorkPos.y + 8.f,
+                         vp->WorkPos.y + vp->WorkSize.y - ws.y - 8.f)));
+        if (std::abs(clampedPos.x - wp.x) > 0.5f ||
+            std::abs(clampedPos.y - wp.y) > 0.5f) {
+            ImGui::SetWindowPos(clampedPos);
+            wp = clampedPos;
+        }
     }
 
-    const float dragLeft = fullScreen ? 12.f
-        : (artworkView ? 48.f : (compactMode ? 76.f : 74.f));
-    const float dragRightReserve = fullScreen ? 76.f : 0.f;
-    const float dragHeight = fullScreen ? 46.f
-        : (artworkView ? 38.f : (compactMode ? 68.f : 76.f));
+    const float dragLeft = detail::Px(fullScreen ? 12.f
+        : (artworkView ? 48.f : (compactMode ? 76.f : 74.f)));
+    const float dragRightReserve = detail::Px(fullScreen ? 76.f : 0.f);
+    const float dragHeight = detail::Px(fullScreen ? 46.f
+        : (artworkView ? 38.f : (compactMode ? 68.f : 76.f)));
     ImGui::SetCursorScreenPos(ImVec2(wp.x + dragLeft, wp.y));
     ImGui::InvisibleButton("##musicdrag",
         ImVec2(std::max(20.f, ws.x - dragLeft - dragRightReserve), dragHeight));
@@ -276,7 +303,7 @@ void DrawMusicPlayer() {
                ImVec2(wp.x + ws.x, wp.y + ws.y),
                16.f + hover * 8.f, 10, 11.f, 0.40f + hover * 0.14f);
     detail::DrawPlayerBackground(dl, wp, ws, playing, showLyrics, artworkView,
-                                  fullScreen, haveArt, hover);
+                                  fullScreen, haveArt, hover, g_uiScale);
 
     if (!hasTrack) {
         detail::DrawNotPlayingMessage(dl, regular, bold, wp, ws);
@@ -297,6 +324,7 @@ void DrawMusicPlayer() {
         std::max(180.f, wp.x + ws.x - 68.f - fullLyricsX));
 
     detail::HeaderContext hctx{};
+    hctx.uiScale = g_uiScale;
     hctx.drawList = dl;
     hctx.regular = regular;
     hctx.bold = bold;
@@ -328,6 +356,7 @@ void DrawMusicPlayer() {
 
     if (showLyrics && !artworkView && ws.y > 245.f) {
         detail::LyricsPanelContext lctx{};
+        lctx.uiScale = g_uiScale;
         lctx.drawList = dl;
         lctx.regular = regular;
         lctx.bold = bold;
@@ -346,6 +375,7 @@ void DrawMusicPlayer() {
     }
 
     detail::TransportContext tctx{};
+    tctx.uiScale = g_uiScale;
     tctx.drawList = dl;
     tctx.regular = regular;
     tctx.bold = bold;

@@ -5,6 +5,19 @@
 
 namespace native_music_player::detail {
 
+// Every layout constant in the player is authored against the mode's BASE size
+// (the DesiredSize for that mode). Because resizing is now a single uniform
+// scale, the ratio of the live window to that base is one number -- so the whole
+// card can be scaled by multiplying through it. Without this, dragging the card
+// bigger grew the panel but left the icons, text, and padding at their original
+// pixel sizes, which is the single most obvious way it stopped looking like the
+// real player.
+float UiScale();
+void SetUiScale(float scale);
+// Rounds to whole pixels so 1px rules and hairlines do not land on half-pixels
+// and blur once scaled.
+float Px(float v);
+
 void EnsureVisualPalette();
 void SetPaletteFromArt(const uint8_t* bgra, int width, int height);
 void SamplePaletteRegionsBGRA(const uint8_t* bgra, int width, int height,
@@ -23,7 +36,7 @@ ImU32 LyricHighlightColor();
 void DrawPlayerBackground(ImDrawList* drawList, const ImVec2& position,
                           const ImVec2& size, bool playing, bool showLyrics,
                           bool artworkView, bool fullScreen, bool haveArt,
-                          float hoverAmount);
+                          float hoverAmount, float uiScale);
 void ReleaseVisualAssets();
 
 void DrawMediaGlyph(ImDrawList* drawList, ImVec2 center, float radius,
@@ -50,6 +63,7 @@ void DrawArtworkLyricOverlay(ImDrawList* drawList, ImFont* regular,
                              int activeLyric);
 
 struct LyricsPanelContext {
+    float uiScale = 1.0f;
     ImDrawList* drawList = nullptr;
     ImFont* regular = nullptr;
     ImFont* bold = nullptr;
@@ -69,6 +83,7 @@ struct LyricsPanelContext {
 void DrawLyricsPanel(const LyricsPanelContext& context);
 
 struct TransportContext {
+    float uiScale = 1.0f;
     ImDrawList* drawList = nullptr;
     ImFont* regular = nullptr;
     ImFont* bold = nullptr;
@@ -91,6 +106,7 @@ struct TransportContext {
 void DrawTransportControls(const TransportContext& context);
 
 struct HeaderContext {
+    float uiScale = 1.0f;
     ImDrawList* drawList = nullptr;
     ImFont* regular = nullptr;
     ImFont* bold = nullptr;

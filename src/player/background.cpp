@@ -399,14 +399,16 @@ void ResetPaletteState() {
 
 void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
                           bool playing, bool showLyrics, bool artworkView,
-                          bool fullScreen, bool haveArt, float hover) {
+                          bool fullScreen, bool haveArt, float hover,
+                          float uiScale) {
+    (void)uiScale;   // geometry below is already derived from `size`
     UpdatePalette();
     const MusicPalette& p = s_paletteCurrent;
     ImVec2 max(min.x + size.x, min.y + size.y);
     float dt = std::min(ImGui::GetIO().DeltaTime, 0.05f);
     if (playing) s_motion += dt * 0.32f;
 
-    const float rounding = fullScreen ? 16.f : 10.f;
+    const float rounding = Px(fullScreen ? 16.f : 10.f);
     const bool compactSurface = !fullScreen && !showLyrics && !artworkView;
     dl->AddRectFilled(min, max, IM_COL32(4, 5, 8, 255), rounding);
 
@@ -479,12 +481,22 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
     if (artworkView && haveArt) {
         ImTextureID art = AlbumArtTexture();
         if (art) {
-            const float artExtent = std::min(size.x - 2.f,
-                std::max(120.f, size.y - 2.f));
+            // Fill the whole card. The cover used to be drawn SQUARE, sized by
+            // the card's width, so on a card taller than it is wide the art
+            // stopped short and left a band of plain background along the
+            // bottom edge -- visible as a dead strip under the controls.
             const ImVec2 artMin(min.x + 1.f, min.y + 1.f);
-            const ImVec2 artMax(max.x - 1.f, min.y + 1.f + artExtent);
+            const ImVec2 artMax(max.x - 1.f, max.y - 1.f);
+            const float artExtent = artMax.y - artMin.y;
+            // Cover-fit rather than stretch: crop the long axis in UV space so
+            // a square cover fills a non-square card without distorting faces.
+            const float rectW = artMax.x - artMin.x;
+            const float rectH = artExtent;
+            float uvX = 0.f, uvY = 0.f;
+            if (rectW > rectH) uvY = (1.f - rectH / rectW) * 0.5f;
+            else if (rectH > rectW) uvX = (1.f - rectW / rectH) * 0.5f;
             dl->AddImageRounded(art, artMin, artMax,
-                                ImVec2(0.f, 0.f), ImVec2(1.f, 1.f),
+                                ImVec2(uvX, uvY), ImVec2(1.f - uvX, 1.f - uvY),
                                 IM_COL32_WHITE, rounding - 1.f);
             const float fadeTop = artMax.y - std::min(112.f, artExtent * 0.37f);
             // The alpha-ramped atmosphere copy carries the dissolve now, so the
