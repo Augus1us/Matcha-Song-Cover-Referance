@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 #include <cstdint>
 
 namespace native_music_player::detail {
@@ -111,138 +112,131 @@ ImU32 Color(ImVec4 color, float alpha = 1.f) {
     return ImGui::ColorConvertFloat4ToU32(color);
 }
 
+// Palette extraction, frequency-based (Apple Music's approach).
+//
+// This used to average: a 4x4 grid where each block was averaged, then hue
+// buckets that averaged again. Averaging distinct colours is the problem --
+// blending a pink and a blue gives a muddy grey-violet that appears NOWHERE in
+// the artwork, and every average pulls toward the middle, killing both
+// saturation and lightness. That is why a bright pink cover came out dark
+// maroon: not the darkening alone, but a palette of colours the cover never
+// contained.
+//
+// Apple instead quantises the cover into a colour histogram and takes the most
+// FREQUENT colours. A frequent colour is by definition one that actually
+// appears in the artwork, so it stays as vivid as the cover is. Candidates are
+// then scored for how well they read as a surface -- near-black and near-white
+// are dropped, saturation is rewarded, and mid-to-light luminance is preferred
+// -- and near-duplicates are suppressed so the accents are genuinely distinct.
 MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
     MusicPalette fallback;
     if (!bgra || width <= 0 || height <= 0) return fallback;
 
-    struct Candidate {
-        MusicRgb color;
-        float score = 0.f;
-        float weight = 0.f;
-    };
-    Candidate blocks[16] = {};
-    struct HueBucket {
-        MusicRgb sum;
-        float weight = 0.f;
-    };
-    constexpr int kHueBuckets = 24;
-    HueBucket hueBuckets[kHueBuckets] = {};
+    // 5 bits per channel: fine enough to keep shades apart, coarse enough that
+    // dithering and JPEG noise still land in the same bucket.
+    constexpr int kBits = 5;
+    constexpr int kLevels = 1 << kBits;              // 32
+    constexpr int kBucketCount = kLevels * kLevels * kLevels;
+    struct Bucket { float r = 0, g = 0, b = 0, weight = 0; };
+    static std::vector<Bucket> buckets;
+    buckets.assign(kBucketCount, Bucket{});
+
+    // Cap the work on large covers; ~200x200 samples is plenty for a histogram.
+    const int stepX = std::max(1, width / 200);
+    const int stepY = std::max(1, height / 200);
     MusicRgb overall = {};
     float overallWeight = 0.f;
 
-    for (int by = 0; by < 4; ++by) {
-        for (int bx = 0; bx < 4; ++bx) {
-            int x0 = width * bx / 4, x1 = width * (bx + 1) / 4;
-            int y0 = height * by / 4, y1 = height * (by + 1) / 4;
-            int stepX = std::max(1, (x1 - x0) / 12);
-            int stepY = std::max(1, (y1 - y0) / 12);
-            MusicRgb sum = {};
-            float weight = 0.f;
-            for (int y = y0; y < y1; y += stepY) {
-                for (int x = x0; x < x1; x += stepX) {
-                    const uint8_t* px = bgra + ((size_t)y * width + x) * 4;
-                    float alpha = px[3] / 255.f;
-                    if (alpha < 0.25f) continue;
-                    MusicRgb c = { px[2] / 255.f, px[1] / 255.f, px[0] / 255.f };
-                    const float saturation = Saturation(c);
-                    const float value = std::max(c.r, std::max(c.g, c.b));
-                    float sampleWeight = alpha * (0.35f + saturation * 1.3f);
-                    sum.r += c.r * sampleWeight;
-                    sum.g += c.g * sampleWeight;
-                    sum.b += c.b * sampleWeight;
-                    weight += sampleWeight;
-                    if (saturation >= 0.10f && value >= 0.06f) {
-                        const int bucket = std::clamp(
-                            (int)std::floor(Hue(c) * kHueBuckets),
-                            0, kHueBuckets - 1);
-                        const float hueWeight = alpha * std::pow(saturation, 1.35f) *
-                            (0.20f + std::sqrt(value));
-                        hueBuckets[bucket].sum.r += c.r * hueWeight;
-                        hueBuckets[bucket].sum.g += c.g * hueWeight;
-                        hueBuckets[bucket].sum.b += c.b * hueWeight;
-                        hueBuckets[bucket].weight += hueWeight;
-                    }
-                }
-            }
-            Candidate& block = blocks[by * 4 + bx];
-            if (weight > 0.f) {
-                block.color = { sum.r / weight, sum.g / weight, sum.b / weight };
-                float lum = Luma(block.color);
-                block.score = Saturation(block.color) * 1.15f +
-                    (1.f - std::abs(lum - 0.5f) * 2.f) * 0.16f;
-                block.weight = weight;
-                overall.r += block.color.r * weight;
-                overall.g += block.color.g * weight;
-                overall.b += block.color.b * weight;
-                overallWeight += weight;
-            }
-        }
-    }
-    if (overallWeight <= 0.f) return fallback;
-    overall = { overall.r / overallWeight, overall.g / overallWeight,
-                overall.b / overallWeight };
+    for (int y = 0; y < height; y += stepY) {
+        for (int x = 0; x < width; x += stepX) {
+            const uint8_t* px = bgra + ((size_t)y * width + x) * 4;
+            const float alpha = px[3] / 255.f;
+            if (alpha < 0.25f) continue;
+            const MusicRgb c = { px[2] / 255.f, px[1] / 255.f, px[0] / 255.f };
+            const float value = std::max(c.r, std::max(c.g, c.b));
+            const float sat = Saturation(c);
 
-    int selectedBuckets[3] = { -1, -1, -1 };
-    for (int pick = 0; pick < 3; ++pick) {
-        float bestScore = -1.f;
-        for (int i = 0; i < kHueBuckets; ++i) {
-            if (hueBuckets[i].weight <= 0.f) continue;
-            bool alreadySelected = false;
-            float nearestHue = 0.5f;
-            for (int previous = 0; previous < pick; ++previous) {
-                if (selectedBuckets[previous] == i) alreadySelected = true;
-                const float raw = std::abs((float)i - selectedBuckets[previous]) /
-                    (float)kHueBuckets;
-                nearestHue = std::min(nearestHue, std::min(raw, 1.f - raw));
-            }
-            if (alreadySelected) continue;
-            const float separation = pick == 0 ? 1.f :
-                (0.24f + 0.76f * std::clamp(nearestHue / 0.16f, 0.f, 1.f));
-            const float score = hueBuckets[i].weight * separation;
-            if (score > bestScore) {
-                selectedBuckets[pick] = i;
-                bestScore = score;
-            }
+            overall.r += c.r * alpha; overall.g += c.g * alpha;
+            overall.b += c.b * alpha; overallWeight += alpha;
+
+            // Skip the extremes outright: they dominate most covers by sheer
+            // area (borders, blown highlights) and make every palette grey.
+            if (value < 0.10f || (value > 0.96f && sat < 0.10f)) continue;
+
+            const int ri = std::min(kLevels - 1, (int)(c.r * kLevels));
+            const int gi = std::min(kLevels - 1, (int)(c.g * kLevels));
+            const int bi = std::min(kLevels - 1, (int)(c.b * kLevels));
+            Bucket& bucket = buckets[(size_t)(ri * kLevels + gi) * kLevels + bi];
+            // Weight by area, but let saturated pixels count for more so a small
+            // vivid subject can still beat a large flat background.
+            const float w = alpha * (0.55f + sat * 1.25f);
+            bucket.r += c.r * w; bucket.g += c.g * w; bucket.b += c.b * w;
+            bucket.weight += w;
         }
     }
-    auto bucketColor = [&](int index, const MusicRgb& fallbackColor) {
-        if (index < 0 || hueBuckets[index].weight <= 0.f) return fallbackColor;
-        const float inverse = 1.f / hueBuckets[index].weight;
-        return MusicRgb{
-            hueBuckets[index].sum.r * inverse,
-            hueBuckets[index].sum.g * inverse,
-            hueBuckets[index].sum.b * inverse
-        };
-    };
-    MusicRgb dominant[3] = {
-        bucketColor(selectedBuckets[0], overall),
-        bucketColor(selectedBuckets[1], overall),
-        bucketColor(selectedBuckets[2], overall)
-    };
-    std::sort(std::begin(dominant), std::end(dominant),
-        [](const MusicRgb& left, const MusicRgb& right) {
-            return Luma(left) < Luma(right);
-        });
-    const MusicRgb a = dominant[0];
-    const MusicRgb b = dominant[2];
-    const MusicRgb c = dominant[1];
+
+    if (overallWeight > 0.f) {
+        overall.r /= overallWeight;
+        overall.g /= overallWeight;
+        overall.b /= overallWeight;
+    }
+
+    struct Candidate { MusicRgb color; float weight; float score; };
+    std::vector<Candidate> candidates;
+    candidates.reserve(64);
+    for (const Bucket& bucket : buckets) {
+        if (bucket.weight <= 0.f) continue;
+        const MusicRgb c = { bucket.r / bucket.weight,
+                             bucket.g / bucket.weight,
+                             bucket.b / bucket.weight };
+        const float sat = Saturation(c);
+        const float lum = Luma(c);
+        // Prefer the band a surface actually reads well in. A raised cosine
+        // centred a little above mid-grey: dark colours make the muddy card we
+        // had, blown-out ones leave nothing for white text to sit on.
+        const float lumWindow = std::exp(-((lum - 0.58f) * (lum - 0.58f)) / 0.10f);
+        // sqrt on the weight so a huge flat area cannot bury everything else.
+        const float score = std::sqrt(bucket.weight) *
+                            (0.35f + sat * 1.55f) * (0.30f + lumWindow);
+        candidates.push_back({ c, bucket.weight, score });
+    }
+    if (candidates.empty()) return fallback;
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Candidate& x, const Candidate& y) { return x.score > y.score; });
+
+    // Pick distinct colours: reject anything too near one already chosen, so the
+    // accents are not three shades of the same thing.
+    MusicRgb picks[3];
+    int picked = 0;
+    for (const Candidate& cand : candidates) {
+        bool tooClose = false;
+        for (int i = 0; i < picked && !tooClose; ++i) {
+            const float dr = cand.color.r - picks[i].r;
+            const float dg = cand.color.g - picks[i].g;
+            const float db = cand.color.b - picks[i].b;
+            tooClose = (dr * dr + dg * dg + db * db) < 0.055f;
+        }
+        if (tooClose) continue;
+        picks[picked++] = cand.color;
+        if (picked == 3) break;
+    }
+    while (picked < 3) {                 // monochrome cover: fill from the mean
+        picks[picked] = picked == 0 ? overall : picks[picked - 1];
+        ++picked;
+    }
+
+    const MusicRgb a = picks[0], b = picks[1], c = picks[2];
     MusicPalette result;
-    // Surface brightness follows the cover instead of being pinned dark.
-    //
-    // These were fixed HSV values of 0.23 and 0.15, so the card came out the
-    // same near-black whatever the artwork was: a bright pink cover rendered as
-    // dark maroon at about a third of the art's own luminance, where the
-    // reference sits close to the cover's level and reads light. Saturation is
-    // also pulled in a little so the result is a soft wash rather than a block
-    // of colour.
-    result.top = ToVec4(Tone(Mix(overall, a, 0.78f), 0.52f, 0.88f, 0.15f));
-    result.bottom = ToVec4(Tone(
-        Mix(Mix(overall, b, 0.62f), c, 0.18f), 0.42f, 0.88f, 0.13f));
-    result.accentA = ToVec4(Tone(a, 0.66f, 1.18f, 0.30f));
-    result.accentB = ToVec4(Tone(b, 0.58f, 1.16f, 0.26f));
-    result.accentC = ToVec4(Tone(c, 0.61f, 1.16f, 0.26f));
-    result.progress = ToVec4(Tone(
-        Mix(Mix(a, b, 0.45f), c, 0.22f), 0.90f, 1.12f, 0.18f));
+    // Surface: lead with the dominant colour, settled into a light, low-chroma
+    // wash so it reads as a tinted surface rather than a slab of the cover.
+    result.top = ToVec4(Tone(Mix(a, overall, 0.30f), 0.62f, 0.62f, 0.10f));
+    result.bottom = ToVec4(Tone(Mix(Mix(a, b, 0.45f), overall, 0.34f),
+                                0.54f, 0.62f, 0.09f));
+    result.accentA = ToVec4(Tone(a, 0.70f, 1.10f, 0.26f));
+    result.accentB = ToVec4(Tone(b, 0.64f, 1.08f, 0.24f));
+    result.accentC = ToVec4(Tone(c, 0.66f, 1.08f, 0.24f));
+    result.progress = ToVec4(Tone(Mix(Mix(a, b, 0.45f), c, 0.22f),
+                                  0.92f, 1.05f, 0.16f));
     return result;
 }
 
