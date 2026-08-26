@@ -514,14 +514,20 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
         dl->AddRectFilled(min, max,
             IM_COL32(255, 255, 255, (int)(11.f * hover)), rounding);
 
-    dl->AddRect(min, max, IM_COL32(0, 0, 0,
-                    fullScreen ? 218 : (compactSurface ? 148 : 184)),
-                rounding, 0, fullScreen ? 1.35f : 1.25f);
-    dl->AddRect(ImVec2(min.x + 1.5f, min.y + 1.5f),
-                ImVec2(max.x - 1.5f, max.y - 1.5f),
-                IM_COL32(224, 233, 241,
-                    (int)((fullScreen ? 30.f : 28.f) + hover * 20.f)),
-                rounding - 1.5f, 0, 1.f);
+    // One hairline, one radius. Previously an outer dark ring at `rounding` and
+    // an inner light ring at `rounding - 1.5f` were drawn 1.5px apart: two
+    // different curves at the corners, which read as a doubled, ragged edge
+    // exactly where the eye checks a rounded rectangle. Insetting a stroke on a
+    // rounded rect needs the radius reduced by the SAME inset to stay
+    // concentric, and even then the two strokes fight each other at this size.
+    //
+    // A single 1px light border sitting just inside the fill matches the real
+    // player; the card already separates from the desktop by its own contrast.
+    dl->AddRect(ImVec2(min.x + 0.5f, min.y + 0.5f),
+                ImVec2(max.x - 0.5f, max.y - 0.5f),
+                IM_COL32(236, 242, 248,
+                    (int)((fullScreen ? 30.f : 26.f) + hover * 18.f)),
+                rounding - 0.5f, 0, 1.f);
 }
 
 }  // namespace native_music_player::detail

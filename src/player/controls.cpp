@@ -8,25 +8,51 @@
 
 namespace native_music_player::detail {
 
+// Transport glyphs, matched to Apple Music / Matcha.
+//
+// Previous and next are DOUBLE TRIANGLES (backward.fill / forward.fill), not
+// the bar-plus-triangle "skip to start/end" glyph -- that is a different symbol
+// and reads as the wrong control at a glance. The two triangles meet at the
+// centre with no gap and no bar.
+//
+// kind: 0 = previous, 1 = play, 2 = pause, 3 = next.
 void DrawMediaGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
+    // Apple's transport marks are wider than tall; a full-height triangle looks
+    // stubby next to the real thing.
+    const float h = r * 0.86f;
+    // Apple leaves a hairline between the two marks. Sharing a vertex fuses
+    // them into one arrow with a notch, which is a different symbol.
+    const float g = r * 0.16f;
     switch (kind) {
     case 0:
-        dl->AddRectFilled(ImVec2(c.x - r, c.y - r), ImVec2(c.x - r + 2.f, c.y + r), col, 1.f);
-        dl->AddTriangleFilled(ImVec2(c.x + r, c.y - r), ImVec2(c.x + r, c.y + r),
-                              ImVec2(c.x - r + 3.f, c.y), col);
+        dl->AddTriangleFilled(ImVec2(c.x - g,     c.y - h), ImVec2(c.x - g,     c.y + h),
+                              ImVec2(c.x - r,     c.y), col);
+        dl->AddTriangleFilled(ImVec2(c.x + r,     c.y - h), ImVec2(c.x + r,     c.y + h),
+                              ImVec2(c.x + g,     c.y), col);
         break;
-    case 1:
-        dl->AddTriangleFilled(ImVec2(c.x - r + 1.f, c.y - r), ImVec2(c.x - r + 1.f, c.y + r),
-                              ImVec2(c.x + r, c.y), col);
+    case 1: {
+        // Nudged right of centre: a play triangle centred on its bounding box
+        // reads as sitting too far left, because its visual mass is at the base.
+        const float px = c.x - r * 0.18f;
+        dl->AddTriangleFilled(ImVec2(px,         c.y - h * 1.06f),
+                              ImVec2(px,         c.y + h * 1.06f),
+                              ImVec2(px + r * 1.7f, c.y), col);
         break;
-    case 2:
-        dl->AddRectFilled(ImVec2(c.x - r, c.y - r), ImVec2(c.x - 1.5f, c.y + r), col, 1.f);
-        dl->AddRectFilled(ImVec2(c.x + 1.5f, c.y - r), ImVec2(c.x + r, c.y + r), col, 1.f);
+    }
+    case 2: {
+        const float bw = std::max(2.f, r * 0.36f);      // bar width
+        const float gap = r * 0.30f;
+        dl->AddRectFilled(ImVec2(c.x - gap - bw, c.y - h * 1.06f),
+                          ImVec2(c.x - gap,      c.y + h * 1.06f), col, bw * 0.42f);
+        dl->AddRectFilled(ImVec2(c.x + gap,      c.y - h * 1.06f),
+                          ImVec2(c.x + gap + bw, c.y + h * 1.06f), col, bw * 0.42f);
         break;
+    }
     case 3:
-        dl->AddTriangleFilled(ImVec2(c.x - r, c.y - r), ImVec2(c.x - r, c.y + r),
-                              ImVec2(c.x + r - 3.f, c.y), col);
-        dl->AddRectFilled(ImVec2(c.x + r - 2.f, c.y - r), ImVec2(c.x + r, c.y + r), col, 1.f);
+        dl->AddTriangleFilled(ImVec2(c.x + g,     c.y - h), ImVec2(c.x + g,     c.y + h),
+                              ImVec2(c.x + r,     c.y), col);
+        dl->AddTriangleFilled(ImVec2(c.x - r,     c.y - h), ImVec2(c.x - r,     c.y + h),
+                              ImVec2(c.x - g,     c.y), col);
         break;
     }
 }
@@ -61,26 +87,33 @@ void DrawUtilityGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
         dl->AddLine(ImVec2(c.x + k, c.y + k * 0.25f), ImVec2(c.x + k, c.y + k), col, stroke);
         dl->AddLine(ImVec2(c.x + k, c.y + k), ImVec2(c.x + k * 0.25f, c.y + k), col, stroke);
         break;
-    case 1:
-        dl->AddLine(ImVec2(c.x - k, c.y - k * 0.58f),
-                    ImVec2(c.x - k * 0.35f, c.y - k * 0.58f), col, stroke);
-        dl->AddLine(ImVec2(c.x - k * 0.35f, c.y - k * 0.58f),
-                    ImVec2(c.x + k * 0.35f, c.y + k * 0.58f), col, stroke);
-        dl->AddLine(ImVec2(c.x + k * 0.35f, c.y + k * 0.58f),
-                    ImVec2(c.x + k, c.y + k * 0.58f), col, stroke);
-        dl->AddTriangleFilled(ImVec2(c.x + k, c.y + k * 0.58f),
-                              ImVec2(c.x + k * 0.38f, c.y + k * 0.13f),
-                              ImVec2(c.x + k * 0.38f, c.y + k), col);
-        dl->AddLine(ImVec2(c.x - k, c.y + k * 0.58f),
-                    ImVec2(c.x - k * 0.35f, c.y + k * 0.58f), col, stroke);
-        dl->AddLine(ImVec2(c.x - k * 0.35f, c.y + k * 0.58f),
-                    ImVec2(c.x + k * 0.08f, c.y + k * 0.18f), col, stroke);
-        dl->AddLine(ImVec2(c.x + k * 0.36f, c.y - k * 0.58f),
-                    ImVec2(c.x + k, c.y - k * 0.58f), col, stroke);
-        dl->AddTriangleFilled(ImVec2(c.x + k, c.y - k * 0.58f),
-                              ImVec2(c.x + k * 0.38f, c.y - k),
-                              ImVec2(c.x + k * 0.38f, c.y - k * 0.13f), col);
+    case 1: {
+        // Two paths crossing, arrowheads on the right. The previous version was
+        // the right shape but drawn inside k (~4px here): the horizontal runs
+        // collapsed to nothing and what survived read as a Bluetooth mark.
+        // Widening past k and shortening the verticals makes it legible at the
+        // size it is actually rendered.
+        const float w = k * 1.18f;
+        const float hh = k * 0.60f;
+        const float tip = w * 0.98f;
+        const float headBack = w * 0.55f;
+        const float headHalf = hh * 0.62f;
+        // lower-left -> upper-right
+        dl->AddLine(ImVec2(c.x - w, c.y + hh), ImVec2(c.x - w * 0.42f, c.y + hh), col, stroke);
+        dl->AddLine(ImVec2(c.x - w * 0.42f, c.y + hh), ImVec2(c.x + w * 0.42f, c.y - hh), col, stroke);
+        dl->AddLine(ImVec2(c.x + w * 0.42f, c.y - hh), ImVec2(c.x + headBack, c.y - hh), col, stroke);
+        dl->AddTriangleFilled(ImVec2(c.x + tip, c.y - hh),
+                              ImVec2(c.x + headBack, c.y - hh - headHalf),
+                              ImVec2(c.x + headBack, c.y - hh + headHalf), col);
+        // upper-left -> lower-right
+        dl->AddLine(ImVec2(c.x - w, c.y - hh), ImVec2(c.x - w * 0.42f, c.y - hh), col, stroke);
+        dl->AddLine(ImVec2(c.x - w * 0.42f, c.y - hh), ImVec2(c.x + w * 0.42f, c.y + hh), col, stroke);
+        dl->AddLine(ImVec2(c.x + w * 0.42f, c.y + hh), ImVec2(c.x + headBack, c.y + hh), col, stroke);
+        dl->AddTriangleFilled(ImVec2(c.x + tip, c.y + hh),
+                              ImVec2(c.x + headBack, c.y + hh - headHalf),
+                              ImVec2(c.x + headBack, c.y + hh + headHalf), col);
         break;
+    }
     case 2:
         dl->PathLineTo(ImVec2(c.x - k * 0.94f, c.y + k * 0.02f));
         dl->PathBezierCubicCurveTo(
@@ -214,21 +247,15 @@ void DrawTransportControls(const TransportContext& ctx) {
         int kind = ctls[i].kind;
         if (kind == -1) kind = ctx.playing ? 2 : 1;
         if (i == 1) {
-            if (fullScreen || compactMusic) {
-                if (hv > 0.01f)
-                    dl->AddCircleFilled(ImVec2(bx, cy), primaryRadius,
-                                        IM_COL32(255, 255, 255,
-                                            (int)(18 * hv)), 20);
-                DrawMediaGlyph(dl, ImVec2(bx, cy), 6.6f * bnc, kind,
-                               IM_COL32(255, 255, 255, (int)(225 + 30 * hv)));
-            } else {
-                dl->AddCircleFilled(ImVec2(bx, cy), primaryRadius * bnc,
-                                    IM_COL32(255, 255, 255,
-                                        (int)(225 + 30 * hv)), 28);
-                DrawMediaGlyph(dl, ImVec2(bx, cy),
-                               (compactMusic ? 4.4f : 5.6f) * bnc, kind,
-                               IM_COL32(15, 17, 22, 245));
-            }
+            // Plain white glyph in EVERY mode. The lyrics/expanded layout used
+            // to put play/pause inside a filled white disc -- that is Spotify's
+            // treatment, not Apple's, and it made the transport row read as a
+            // different app the moment the card was expanded.
+            if (hv > 0.01f)
+                dl->AddCircleFilled(ImVec2(bx, cy), primaryRadius,
+                                    IM_COL32(255, 255, 255, (int)(18 * hv)), 20);
+            DrawMediaGlyph(dl, ImVec2(bx, cy), 6.6f * bnc, kind,
+                           IM_COL32(255, 255, 255, (int)(225 + 30 * hv)));
         } else {
             if (hv > 0.01f)
                 dl->AddCircleFilled(ImVec2(bx, cy), secondaryRadius,

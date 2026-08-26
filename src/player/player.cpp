@@ -34,6 +34,29 @@ WindowState& State() {
     return s;
 }
 
+// The window is not freely resizable: every mode has one natural shape, and a
+// drag only chooses HOW BIG that shape is -- one scalar, like a size slider.
+// Free resize let the card be stretched into proportions the layout was never
+// designed for (squashed art, lyrics in a tall thin column), which is the main
+// reason it did not read as the real player.
+//
+// A drag is projected onto the mode's aspect line rather than following one
+// axis, so dragging any handle -- corner or edge -- scales the whole card and
+// it tracks the cursor instead of fighting it. For base (w0,h0) and a dragged
+// (w,h), the closest point on { s*(w0,h0) } is s = (w0*w + h0*h)/(w0^2 + h0^2).
+struct AspectLock { float baseW, baseH, minScale, maxScale; };
+AspectLock g_aspectLock{};
+
+void ApplyUniformScale(ImGuiSizeCallbackData* data) {
+    const AspectLock* a = (const AspectLock*)data->UserData;
+    if (!a || a->baseW <= 0.f || a->baseH <= 0.f) return;
+    const float denom = a->baseW * a->baseW + a->baseH * a->baseH;
+    float s = (a->baseW * data->DesiredSize.x + a->baseH * data->DesiredSize.y) / denom;
+    s = std::clamp(s, a->minScale, a->maxScale);
+    data->DesiredSize.x = a->baseW * s;
+    data->DesiredSize.y = a->baseH * s;
+}
+
 ImVec2 DesiredSize(const ImGuiViewport* vp, bool fullScreen, bool artworkView,
                    bool expanded, ImVec2& outFull) {
     constexpr float kCompactWidth = 304.f;
@@ -125,18 +148,19 @@ void DrawMusicPlayer() {
     if (firstFrame || modeChanged || st.modeTransition || fullScreen)
         ImGui::SetNextWindowSize(requestedSize, ImGuiCond_Always);
     if (!fullScreen && !st.modeTransition) {
-        if (compactMode) {
-            ImGui::SetNextWindowSizeConstraints(
-                ImVec2(236.f, 109.5f), ImVec2(520.f, 241.f),
-                [](ImGuiSizeCallbackData* data) {
-                    constexpr float aspect = 304.f / 141.f;
-                    data->DesiredSize.y = data->DesiredSize.x / aspect;
-                });
-        } else {
-            ImGui::SetNextWindowSizeConstraints(
-                artworkMode ? ImVec2(280.f, 280.f) : ImVec2(260.f, 350.f),
-                ImVec2(620.f, 760.f));
-        }
+        // Same rule in every mode. Artwork and lyrics modes used to be free-form
+        // between a min and a max, so they could be dragged into shapes the
+        // layout does not support; now they scale exactly like the compact card.
+        g_aspectLock.baseW = desiredSize.x;
+        g_aspectLock.baseH = desiredSize.y;
+        g_aspectLock.minScale = 0.78f;
+        g_aspectLock.maxScale = compactMode ? 1.70f : 1.55f;
+        ImGui::SetNextWindowSizeConstraints(
+            ImVec2(desiredSize.x * g_aspectLock.minScale,
+                   desiredSize.y * g_aspectLock.minScale),
+            ImVec2(desiredSize.x * g_aspectLock.maxScale,
+                   desiredSize.y * g_aspectLock.maxScale),
+            ApplyUniformScale, &g_aspectLock);
     }
     if (fullScreen) {
         if (firstFrame || modeChanged) {

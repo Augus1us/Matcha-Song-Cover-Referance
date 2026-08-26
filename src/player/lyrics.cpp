@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -21,6 +22,48 @@ float    g_scroll = 0.f;
 float    g_scrollTarget = 0.f;
 float    g_layoutWidth = -1.f;
 float    g_contentHeight = 0.f;
+
+// ImGui advances by exactly one font size between wrapped lines and adds no
+// leading, so a lyric that wraps is packed tight against itself while the gap
+// to the NEXT lyric stays wide. That mismatch is what makes wrapped lyrics look
+// cramped. Wrapping is done by hand here so every line -- wrapped or not --
+// uses the same rhythm.
+constexpr float kLyricLeading = 1.34f;
+
+int LyricWrapLineCount(ImFont* font, float size, const char* text, float wrapWidth) {
+    if (!font || !text || !*text || wrapWidth <= 1.f) return 1;
+    const char* s = text;
+    const char* end = text + std::strlen(text);
+    int lines = 0;
+    while (s < end && lines < 64) {
+        const char* wrap = font->CalcWordWrapPosition(size, s, end, wrapWidth);
+        if (wrap <= s) wrap = s + 1;          // never stall on a too-narrow box
+        ++lines;
+        s = wrap;
+        while (s < end && *s == ' ') ++s;
+    }
+    return std::max(1, lines);
+}
+
+// Returns the height consumed, so the caller's layout and this stay in step.
+float DrawWrappedLyric(ImDrawList* dl, ImFont* font, float size, ImVec2 pos,
+                       ImU32 col, const char* text, float wrapWidth) {
+    if (!font || !text) return 0.f;
+    const float step = size * kLyricLeading;
+    const char* s = text;
+    const char* end = text + std::strlen(text);
+    float y = pos.y;
+    int guard = 0;
+    while (s < end && guard++ < 64) {
+        const char* wrap = font->CalcWordWrapPosition(size, s, end, wrapWidth);
+        if (wrap <= s) wrap = s + 1;
+        dl->AddText(font, size, ImVec2(pos.x, y), col, s, wrap);
+        y += step;
+        s = wrap;
+        while (s < end && *s == ' ') ++s;
+    }
+    return y - pos.y;
+}
 bool     g_manualScroll = false;
 uint64_t g_manualUntilMs = 0;
 bool     g_positionSyncRequested = false;
@@ -227,10 +270,12 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
             g_layoutWidth = lyricWidth;
             float layoutSize = inactiveSize + 0.7f;
             for (int i = 0; i < (int)g_cache.size(); ++i) {
-                ImVec2 measured = ctx.regular->CalcTextSizeA(
-                    layoutSize, FLT_MAX, lyricWidth, g_cache[i].text.c_str());
-                g_lineHeights[i] = std::max(22.f, measured.y) +
-                    (ctx.fullScreen ? 23.f : 13.f);
+                const int wrapped = LyricWrapLineCount(
+                    ctx.regular, layoutSize, g_cache[i].text.c_str(), lyricWidth);
+                // Gap between separate lyrics; the leading inside a wrapped
+                // lyric comes from kLyricLeading above.
+                g_lineHeights[i] = wrapped * layoutSize * kLyricLeading +
+                    (ctx.fullScreen ? 23.f : 18.f);
                 g_contentHeight += g_lineHeights[i];
             }
         }
@@ -370,19 +415,20 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                         ImVec2(-1.25f, 0.f), ImVec2(1.25f, 0.f),
                         ImVec2(0.f, -1.25f), ImVec2(0.f, 1.25f)
                     };
+                    // Must wrap identically to the sharp pass below, or the
+                    // glow separates from the glyphs on any lyric that wraps.
                     for (const ImVec2& off : blurOffsets) {
-                        dl->AddText(font, size,
+                        DrawWrappedLyric(dl, font, size,
                             ImVec2(textPos.x + off.x, textPos.y + off.y),
                             IM_COL32(255, 255, 255, blurAlpha),
-                            g_cache[i].text.c_str(), nullptr,
-                            lyricWidth - depthOffset);
+                            g_cache[i].text.c_str(), lyricWidth - depthOffset);
                     }
                 }
                 const float textAlpha = ctx.fullScreen && !isActive && !lineHovered
                     ? alpha * 0.48f : alpha;
-                dl->AddText(font, size, textPos,
+                DrawWrappedLyric(dl, font, size, textPos,
                     IM_COL32(255, 255, 255, (int)(255.f * textAlpha)),
-                    g_cache[i].text.c_str(), nullptr, lyricWidth - depthOffset);
+                    g_cache[i].text.c_str(), lyricWidth - depthOffset);
 
                 if (isActive && !ctx.fullScreen) {
                     const double lineStart = g_cache[i].timeSec;
@@ -405,9 +451,11 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                         dl->PushClipRect(
                             ImVec2(textPos.x, lyricsTop),
                             ImVec2(sweepRight, lyricsTop + lyricsHeight), true);
-                        dl->AddText(font, size, textPos,
+                        // Same wrapping as the base pass, otherwise the
+                        // karaoke sweep drifts off the glyphs it is filling.
+                        DrawWrappedLyric(dl, font, size, textPos,
                             LyricHighlightColor(),
-                            g_cache[i].text.c_str(), nullptr, wrapWidth);
+                            g_cache[i].text.c_str(), wrapWidth);
                         dl->PopClipRect();
                     }
                 }
@@ -449,15 +497,20 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                 ImGui::GetID("##lyric_scroll_focus"),
                 lyricsHovered || scrollbarHovered || scrollbarActive ||
                 g_manualScroll, 12.f);
+            // Near-invisible at rest, fades in while the lyrics are hovered or
+            // being scrolled. The old resting alpha of 58 left a permanent bar
+            // down the side that Matcha never shows.
             dl->AddRectFilled(ImVec2(lyricX + lyricWidth - 7.f, thumbY),
                               ImVec2(lyricX + lyricWidth - 4.f, thumbY + thumbH),
                               IM_COL32(255, 255, 255,
-                                  (int)(58 + 72 * scrollFocus)), 2.f);
+                                  (int)(10 + 96 * scrollFocus)), 2.f);
         }
     }
 
-    if (!ctx.fullScreen)
-        DrawSyncButton(ctx, wp.y + ws.y - 101.f);
+    // No Sync pill / dots: Matcha has neither, and manual scrolling already
+    // re-centres on its own after g_manualUntilMs, so the button was redundant.
+    // DrawSyncButton() is kept for now but no longer drawn.
+    (void)&DrawSyncButton;
 
     g_layoutRevision = g_cacheRevision;
 }
