@@ -254,7 +254,7 @@ void DrawTransportControls(const TransportContext& ctx) {
             if (hv > 0.01f)
                 dl->AddCircleFilled(ImVec2(bx, cy), primaryRadius,
                                     IM_COL32(255, 255, 255, (int)(18 * hv)), 20);
-            DrawMediaGlyph(dl, ImVec2(bx, cy), 6.6f * bnc, kind,
+            DrawMediaGlyph(dl, ImVec2(bx, cy), 7.3f * bnc, kind,
                            IM_COL32(255, 255, 255, (int)(225 + 30 * hv)));
         } else {
             if (hv > 0.01f)
