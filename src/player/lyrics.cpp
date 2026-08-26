@@ -246,10 +246,13 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
     // Text tracks the card: the compact sizes were derived from ws.x already,
     // but were clamped to a fixed pixel band so they stopped growing well before
     // the card did.
+    // The reference sets its lyrics noticeably larger relative to the card:
+    // roughly 5% of the card width against the ~3.2% these worked out to, which
+    // is most of why ours read as small and cramped beside it.
     float inactiveSize = ctx.fullScreen
-        ? 21.f * S : std::clamp(ws.x * 0.046f, 13.5f * S, 15.2f * S);
+        ? 22.f * S : std::clamp(ws.x * 0.055f, 14.5f * S, 18.5f * S);
     float activeSize = ctx.fullScreen
-        ? 26.f * S : std::clamp(ws.x * 0.056f, 16.5f * S, 18.5f * S);
+        ? 27.f * S : std::clamp(ws.x * 0.063f, 16.5f * S, 21.f * S);
     const ImVec2 viewMin(lyricX, lyricsTop);
     const ImVec2 viewMax(lyricX + lyricWidth, lyricsTop + lyricsHeight);
 
@@ -277,14 +280,28 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
             g_lineHeights.resize(g_cache.size());
             g_contentHeight = 0.f;
             g_layoutWidth = lyricWidth;
-            float layoutSize = inactiveSize + 0.7f;
+            // Reserve at the ACTIVE size, not the inactive one.
+            //
+            // Heights used to be measured with the inactive size while the
+            // current line draws at activeSize in bold -- larger, and wide
+            // enough to wrap onto MORE lines than were counted. A wrapped
+            // active line then ran straight over the lyric beneath it. Every
+            // line can become the active one, so every line reserves the room
+            // that would need. It also matches the reference, whose lyrics sit
+            // noticeably further apart than ours did.
             for (int i = 0; i < (int)g_cache.size(); ++i) {
+                // Count wraps at the ACTIVE size but reserve height at the
+                // inactive one. Counting at the active size stops a line from
+                // silently wrapping onto an extra row once it becomes current
+                // (which is what ran the active lyric over the one below it),
+                // while reserving at the active size for all lines -- the first
+                // attempt here -- left every inactive line floating in far more
+                // space than the reference gives them. The inter-lyric gap
+                // absorbs the difference for whichever line is current.
                 const int wrapped = LyricWrapLineCount(
-                    ctx.regular, layoutSize, g_cache[i].text.c_str(), lyricWidth);
-                // Gap between separate lyrics; the leading inside a wrapped
-                // lyric comes from kLyricLeading above.
-                g_lineHeights[i] = wrapped * layoutSize * kLyricLeading +
-                    Px(ctx.fullScreen ? 23.f : 18.f);
+                    ctx.bold, activeSize, g_cache[i].text.c_str(), lyricWidth);
+                g_lineHeights[i] = wrapped * inactiveSize * kLyricLeading +
+                    Px(ctx.fullScreen ? 20.f : 14.f);
                 g_contentHeight += g_lineHeights[i];
             }
         }
@@ -536,10 +553,24 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
         }
     }
 
-    // No Sync pill / dots: Matcha has neither, and manual scrolling already
-    // re-centres on its own after g_manualUntilMs, so the button was redundant.
-    // DrawSyncButton() is kept for now but no longer drawn.
+    // Page dots. The reference does show these -- three marks above the lyrics,
+    // aligned to the lyric column, with the first filled. They were removed
+    // earlier along with the Sync pill on the mistaken read that neither
+    // existed; only the pill was ours. The pill stays gone (manual scrolling
+    // already re-centres itself after g_manualUntilMs).
     (void)&DrawSyncButton;
+    {
+        const float dotR = std::max(1.6f, Px(2.4f));
+        const float step = dotR * 4.2f;
+        // Clamped away from the card edge: in fullscreen the lyric column starts
+        // only 5.5% down, so a fixed offset above it put the dots on the border.
+        const float dotY = std::max(wp.y + Px(22.f),
+                                    lyricsTop - Px(ctx.fullScreen ? 20.f : 16.f));
+        for (int i = 0; i < 3; ++i) {
+            dl->AddCircleFilled(ImVec2(lyricX + dotR + i * step, dotY), dotR,
+                                IM_COL32(255, 255, 255, i == 0 ? 168 : 74), 12);
+        }
+    }
 
     g_layoutRevision = g_cacheRevision;
 }

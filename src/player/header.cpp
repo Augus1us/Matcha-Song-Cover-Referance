@@ -2,6 +2,7 @@
 #include "music_player_internal.h"
 
 #include <algorithm>
+#include <cstring>
 #include <string>
 
 namespace native_music_player::detail {
@@ -49,7 +50,17 @@ void DrawFullscreenHeader(const HeaderContext& ctx) {
 
     const std::string title = Ellipsize(ctx.title ? ctx.title : "",
                                          ctx.bold, 14.f, ctx.fullColumnWidth);
-    const std::string artist = Ellipsize(ctx.artist ? ctx.artist : "",
+    // Same "Artist - Album" sub-line as the compact header; the fullscreen view
+    // was still showing the artist alone.
+    std::string fullSub = ctx.artist ? ctx.artist : "";
+    if (ctx.album && ctx.album[0] && ctx.artist &&
+        std::strcmp(ctx.album, ctx.artist) != 0) {
+        static const char kDash[] = { 32, 32, (char)0xE2, (char)0x80,
+                                      (char)0x94, 32, 32, 0 };
+        fullSub += kDash;
+        fullSub += ctx.album;
+    }
+    const std::string artist = Ellipsize(fullSub.c_str(),
                                           ctx.regular, 10.5f, ctx.fullColumnWidth);
     const float infoY = artMax.y + 37.f;
     music_host::DrawText(dl, ctx.bold, 14.f, ImVec2(ctx.fullColumnX, infoY),
@@ -196,7 +207,16 @@ void DrawCompactHeader(const HeaderContext& ctx) {
         ImVec2(tx, wp.y + Px(compact ? 14.f : 15.f)),
         IM_COL32(255, 255, 255, 245), titleShown.c_str());
     if (ctx.artist && ctx.artist[0]) {
-        const std::string artistShown = Ellipsize(ctx.artist,
+        // "Artist - Album" like the reference; the album half is dropped when
+        // the media session does not report one.
+        std::string sub = ctx.artist;
+        if (ctx.album && ctx.album[0] && std::strcmp(ctx.album, ctx.artist) != 0) {
+            static const char kEmDash[] = { 32, 32, (char)0xE2, (char)0x80,
+                                            (char)0x94, 32, 32, 0 };
+            sub += kEmDash;
+            sub += ctx.album;
+        }
+        const std::string artistShown = Ellipsize(sub.c_str(),
                                                     ctx.regular, 10.f * S, availW);
         music_host::DrawText(dl, ctx.regular, 10.f * S,
             ImVec2(tx, wp.y + Px(compact ? 29.f : 32.f)),

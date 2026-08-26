@@ -358,6 +358,7 @@ void DrawMusicPlayer() {
 
     detail::HeaderContext hctx{};
     hctx.uiScale = g_uiScale;
+    hctx.album = album;
     hctx.drawList = dl;
     hctx.regular = regular;
     hctx.bold = bold;

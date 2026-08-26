@@ -120,6 +120,9 @@ struct HeaderContext {
     ImDrawList* drawList = nullptr;
     ImFont* regular = nullptr;
     ImFont* bold = nullptr;
+    // The reference writes the sub-line as "Artist - Album", not the artist
+    // alone; album may be empty, in which case only the artist is shown.
+    const char* album = "";
     ImVec2 windowPosition{};
     ImVec2 windowSize{};
     const char* title = "";
