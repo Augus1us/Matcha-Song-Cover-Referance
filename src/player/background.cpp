@@ -229,9 +229,9 @@ MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
     MusicPalette result;
     // Surface: lead with the dominant colour, settled into a light, low-chroma
     // wash so it reads as a tinted surface rather than a slab of the cover.
-    result.top = ToVec4(Tone(Mix(a, overall, 0.30f), 0.62f, 0.62f, 0.10f));
+    result.top = ToVec4(Tone(Mix(a, overall, 0.30f), 0.76f, 0.52f, 0.09f));
     result.bottom = ToVec4(Tone(Mix(Mix(a, b, 0.45f), overall, 0.34f),
-                                0.54f, 0.62f, 0.09f));
+                                0.67f, 0.52f, 0.08f));
     result.accentA = ToVec4(Tone(a, 0.70f, 1.10f, 0.26f));
     result.accentB = ToVec4(Tone(b, 0.64f, 1.08f, 0.24f));
     result.accentC = ToVec4(Tone(c, 0.66f, 1.08f, 0.24f));
@@ -424,9 +424,14 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
         dl->AddImageRounded(atmosphere, min, max,
                             ImVec2(0.f, 0.f), ImVec2(1.f, 1.f),
                             IM_COL32(255, 255, 255, (int)fieldAlpha), rounding);
+        // Light scrim only. This ran at alpha 58-90 over the blurred cover, and
+        // together with the near-black base beneath it swallowed most of the
+        // palette that gets drawn on top -- raising the palette brightness
+        // barely showed, because it was being applied at partial opacity over
+        // two dark layers.
         dl->AddRectFilled(min, max,
             IM_COL32(3, 4, 7,
-                fullScreen ? 90 : (artworkView ? 64 : (showLyrics ? 58 : 66))),
+                fullScreen ? 38 : (artworkView ? 30 : (showLyrics ? 22 : 28))),
             rounding);
     }
     ImVec4 surfaceTop = Lerp(p.top, p.accentA, 0.035f);
@@ -435,8 +440,12 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
         surfaceTop = Lerp(p.top, p.accentA, 0.10f);
         surfaceBottom = Lerp(p.bottom, p.accentC, 0.09f);
     }
-    const float paletteOpacity = fullScreen ? 0.28f
-        : (artworkView ? 0.42f : (showLyrics ? 0.46f : 0.80f));
+    // The palette IS the surface colour, so it has to be close to opaque.
+    // At 0.28-0.46 the card was mostly the dark layers underneath showing
+    // through, which is what kept it muddy no matter how the palette was tuned.
+    // Artwork mode stays lower: there the cover itself is the surface.
+    const float paletteOpacity = fullScreen ? 0.72f
+        : (artworkView ? 0.46f : (showLyrics ? 0.88f : 0.90f));
     DrawRoundedGradient(dl,
         ImVec2(min.x + 1.f, min.y + 1.f), ImVec2(max.x - 1.f, max.y - 1.f),
         Color(surfaceTop, paletteOpacity),

@@ -410,11 +410,15 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                     g_syncPulseUntilMs = GetTickCount64() + 650;
                 }
 
+                // These were tuned against a near-black card. The surface now
+                // follows the artwork and can be genuinely light, where
+                // low-alpha white simply disappears -- so the floors are
+                // raised. The falloff shape is unchanged; only the range moves.
                 float distanceAlpha = ctx.fullScreen
-                    ? (distance == 0 ? 0.46f :
-                       distance == 1 ? 0.28f :
-                       distance == 2 ? 0.12f : 0.035f)
-                    : std::max(0.15f, 0.54f - distance * 0.10f);
+                    ? (distance == 0 ? 0.62f :
+                       distance == 1 ? 0.44f :
+                       distance == 2 ? 0.26f : 0.14f)
+                    : std::max(0.30f, 0.70f - distance * 0.09f);
                 float alpha = distanceAlpha + (1.f - distanceAlpha) * focus;
                 alpha = std::min(1.f, alpha + hover * 0.18f);
                 float size = inactiveSize + (activeSize - inactiveSize) * focus;
@@ -459,8 +463,11 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                             g_cache[i].text.c_str(), lyricWidth - depthOffset);
                     }
                 }
+                // Fullscreen dimmed inactive lines a further 0.48x on top of the
+                // distance falloff, which stacked into near-invisibility once
+                // the surface stopped being black.
                 const float textAlpha = ctx.fullScreen && !isActive && !lineHovered
-                    ? alpha * 0.48f : alpha;
+                    ? alpha * 0.72f : alpha;
                 if (crossFading) {
                     DrawWrappedLyric(dl, ctx.regular, size, textPos,
                         IM_COL32(255, 255, 255,
