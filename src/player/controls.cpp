@@ -3,6 +3,7 @@
 #include "music_player_internal.h"
 
 #include <algorithm>
+#include <initializer_list>
 #include <cmath>
 #include <cstdio>
 
@@ -58,94 +59,63 @@ void DrawMediaGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
 }
 
 void DrawUtilityGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
-    if (ImFont* icons = music_host::overlay::GetFont(2)) {
-        static const char* glyphs[] = {
-            "\xEE\x9D\x80",
-            "\xEE\xA2\xB1",
-            "\xEE\xA3\xAE",
-            "\xEE\xA3\xB2"
-        };
-        const char* glyph = glyphs[std::clamp(kind, 0, 3)];
-        const float px = r * 2.25f;
-        const ImVec2 measured = icons->CalcTextSizeA(px, FLT_MAX, 0.f, glyph);
-        dl->AddText(icons, px,
-                    ImVec2(c.x - measured.x * 0.5f,
-                           c.y - measured.y * 0.5f - 0.5f),
-                    col, glyph);
-        return;
-    }
-    const float k = std::max(2.8f, r * 0.72f);
-    const float stroke = std::max(1.05f, r * 0.17f);
+    // No icon-font path any more. This used to prefer host font slot 2 (Segoe
+    // MDL2 codepoints) when the host supplied one and fall back to vectors
+    // otherwise, so the SAME build drew different icons depending on where it
+    // ran -- MDL2 marks inside Cover, hand-drawn ones in the preview. Drawing
+    // Lucide geometry unconditionally keeps every host identical.
+    // ---------------------------------------------------------------------
+    // Icons below are Lucide (https://lucide.dev), ISC licensed, transcribed
+    // from the project's own SVG path data rather than approximated by hand.
+    // The earlier shapes were drawn from memory and did not match any real
+    // icon set -- the shuffle in particular collapsed into something closer to
+    // a Bluetooth mark. Lucide authors on a 24x24 grid with stroke-width 2 and
+    // round caps/joins, so the mapping below is a straight transcription.
+    // ---------------------------------------------------------------------
+    const float k = std::max(2.4f, r * 0.92f) / 12.f;   // 24x24 -> icon box
+    const float stroke = std::max(1.15f, r * 0.19f);
+    auto P = [&](float x, float y) {
+        return ImVec2(c.x + (x - 12.f) * k, c.y + (y - 12.f) * k);
+    };
+    auto poly = [&](std::initializer_list<ImVec2> pts) {
+        for (const ImVec2& p : pts) dl->PathLineTo(p);
+        dl->PathStroke(col, 0, stroke);
+        // Round caps: Lucide uses stroke-linecap="round", and without dots on
+        // the ends short segments look chopped at this size.
+        const ImVec2* first = pts.begin();
+        dl->AddCircleFilled(*first, stroke * 0.5f, col, 8);
+        dl->AddCircleFilled(*(pts.end() - 1), stroke * 0.5f, col, 8);
+    };
     switch (kind) {
-    case 0:
-        dl->AddLine(ImVec2(c.x - k, c.y - k * 0.25f), ImVec2(c.x - k, c.y - k), col, stroke);
-        dl->AddLine(ImVec2(c.x - k, c.y - k), ImVec2(c.x - k * 0.25f, c.y - k), col, stroke);
-        dl->AddLine(ImVec2(c.x + k, c.y - k * 0.25f), ImVec2(c.x + k, c.y - k), col, stroke);
-        dl->AddLine(ImVec2(c.x + k, c.y - k), ImVec2(c.x + k * 0.25f, c.y - k), col, stroke);
-        dl->AddLine(ImVec2(c.x - k, c.y + k * 0.25f), ImVec2(c.x - k, c.y + k), col, stroke);
-        dl->AddLine(ImVec2(c.x - k, c.y + k), ImVec2(c.x - k * 0.25f, c.y + k), col, stroke);
-        dl->AddLine(ImVec2(c.x + k, c.y + k * 0.25f), ImVec2(c.x + k, c.y + k), col, stroke);
-        dl->AddLine(ImVec2(c.x + k, c.y + k), ImVec2(c.x + k * 0.25f, c.y + k), col, stroke);
+    case 0:   // lucide "maximize-2"
+        poly({P(15, 3), P(21, 3), P(21, 9)});
+        poly({P(21, 3), P(14, 10)});
+        poly({P(3, 21), P(10, 14)});
+        poly({P(9, 21), P(3, 21), P(3, 15)});
         break;
-    case 1: {
-        // Two paths crossing, arrowheads on the right. The previous version was
-        // the right shape but drawn inside k (~4px here): the horizontal runs
-        // collapsed to nothing and what survived read as a Bluetooth mark.
-        // Widening past k and shortening the verticals makes it legible at the
-        // size it is actually rendered.
-        const float w = k * 1.18f;
-        const float hh = k * 0.60f;
-        const float tip = w * 0.98f;
-        const float headBack = w * 0.55f;
-        const float headHalf = hh * 0.62f;
-        // lower-left -> upper-right
-        dl->AddLine(ImVec2(c.x - w, c.y + hh), ImVec2(c.x - w * 0.42f, c.y + hh), col, stroke);
-        dl->AddLine(ImVec2(c.x - w * 0.42f, c.y + hh), ImVec2(c.x + w * 0.42f, c.y - hh), col, stroke);
-        dl->AddLine(ImVec2(c.x + w * 0.42f, c.y - hh), ImVec2(c.x + headBack, c.y - hh), col, stroke);
-        dl->AddTriangleFilled(ImVec2(c.x + tip, c.y - hh),
-                              ImVec2(c.x + headBack, c.y - hh - headHalf),
-                              ImVec2(c.x + headBack, c.y - hh + headHalf), col);
-        // upper-left -> lower-right
-        dl->AddLine(ImVec2(c.x - w, c.y - hh), ImVec2(c.x - w * 0.42f, c.y - hh), col, stroke);
-        dl->AddLine(ImVec2(c.x - w * 0.42f, c.y - hh), ImVec2(c.x + w * 0.42f, c.y + hh), col, stroke);
-        dl->AddLine(ImVec2(c.x + w * 0.42f, c.y + hh), ImVec2(c.x + headBack, c.y + hh), col, stroke);
-        dl->AddTriangleFilled(ImVec2(c.x + tip, c.y + hh),
-                              ImVec2(c.x + headBack, c.y + hh - headHalf),
-                              ImVec2(c.x + headBack, c.y + hh + headHalf), col);
+    case 1:   // lucide "shuffle"
+        poly({P(18, 2), P(22, 6), P(18, 10)});
+        poly({P(18, 14), P(22, 18), P(18, 22)});
+        poly({P(2, 18), P(3.97f, 18), P(5.7f, 17.6f), P(7.27f, 16.3f),
+              P(12.73f, 7.7f), P(14.3f, 6.4f), P(16.03f, 6), P(22, 6)});
+        poly({P(2, 6), P(3.97f, 6), P(5.9f, 6.5f), P(7.57f, 8.2f)});
+        poly({P(22, 18), P(15.96f, 18), P(14.1f, 17.6f), P(12.66f, 16.2f),
+              P(12.3f, 15.75f)});
+        break;
+    case 2:   // lucide "repeat"
+        poly({P(17, 2), P(21, 6), P(17, 10)});
+        poly({P(3, 11), P(3, 10), P(3.6f, 8), P(5, 6.6f), P(7, 6), P(21, 6)});
+        poly({P(7, 22), P(3, 18), P(7, 14)});
+        poly({P(21, 13), P(21, 14), P(20.4f, 16), P(19, 17.4f), P(17, 18), P(3, 18)});
+        break;
+    case 3: { // lyrics: rounded bubble with a tail and three dots
+        const ImVec2 bMin = P(3, 5), bMax = P(21, 17);
+        dl->AddRect(bMin, bMax, col, 4.f * k * 1.4f, 0, stroke);
+        poly({P(9, 17), P(9.5f, 21), P(13.5f, 17)});
+        for (int i = -1; i <= 1; ++i)
+            dl->AddCircleFilled(P(12 + i * 4.2f, 11), std::max(0.8f, stroke * 0.62f), col, 8);
         break;
     }
-    case 2:
-        dl->PathLineTo(ImVec2(c.x - k * 0.94f, c.y + k * 0.02f));
-        dl->PathBezierCubicCurveTo(
-            ImVec2(c.x - k * 0.94f, c.y - k * 0.43f),
-            ImVec2(c.x - k * 0.58f, c.y - k * 0.62f),
-            ImVec2(c.x - k * 0.20f, c.y - k * 0.62f));
-        dl->PathLineTo(ImVec2(c.x + k * 0.58f, c.y - k * 0.62f));
-        dl->PathStroke(col, 0, stroke);
-        dl->AddTriangleFilled(ImVec2(c.x + k, c.y - k * 0.46f),
-                              ImVec2(c.x + k * 0.42f, c.y - k * 0.88f),
-                              ImVec2(c.x + k * 0.42f, c.y - k * 0.04f), col);
-        dl->PathLineTo(ImVec2(c.x + k * 0.94f, c.y - k * 0.02f));
-        dl->PathBezierCubicCurveTo(
-            ImVec2(c.x + k * 0.94f, c.y + k * 0.43f),
-            ImVec2(c.x + k * 0.58f, c.y + k * 0.62f),
-            ImVec2(c.x + k * 0.20f, c.y + k * 0.62f));
-        dl->PathLineTo(ImVec2(c.x - k * 0.58f, c.y + k * 0.62f));
-        dl->PathStroke(col, 0, stroke);
-        dl->AddTriangleFilled(ImVec2(c.x - k, c.y + k * 0.46f),
-                              ImVec2(c.x - k * 0.42f, c.y + k * 0.04f),
-                              ImVec2(c.x - k * 0.42f, c.y + k * 0.88f), col);
-        break;
-    case 3:
-        dl->AddRect(ImVec2(c.x - k, c.y - k * 0.70f),
-                    ImVec2(c.x + k, c.y + k * 0.60f), col, 2.3f, 0, stroke);
-        dl->AddTriangleFilled(ImVec2(c.x - k * 0.18f, c.y + k * 0.60f),
-                              ImVec2(c.x + k * 0.24f, c.y + k * 0.60f),
-                              ImVec2(c.x - k * 0.03f, c.y + k), col);
-        for (int i = -1; i <= 1; ++i)
-            dl->AddCircleFilled(ImVec2(c.x + i * k * 0.45f, c.y - k * 0.05f),
-                                std::max(0.8f, r * 0.11f), col, 8);
-        break;
     }
 }
 
