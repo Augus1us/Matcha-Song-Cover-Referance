@@ -103,8 +103,34 @@ void EndFrame() {
 
 void InitializeFonts() {
     ImGuiIO& io = ImGui::GetIO();
-    g_regular = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
-    g_bold = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeuib.ttf", 18.0f);
+    // Matcha is an Apple app and sets its type in SF Pro. SF Pro is proprietary
+    // and cannot be redistributed, so the closest face that ships with Windows
+    // is used instead: Segoe UI Variable, Microsoft's answer to SF Pro, whose
+    // letterforms are noticeably rounder and more open than classic Segoe UI.
+    //
+    // Titles and active lyrics take SEMIBOLD, not Bold. Apple sets those in
+    // SF Pro Semibold; Segoe UI Bold is a full step heavier and made the card
+    // read chunkier than the reference at the same size.
+    //
+    // Each entry falls back to classic Segoe UI, which exists on every
+    // supported Windows, so a missing variable font degrades instead of
+    // failing outright.
+    const char* kRegular[] = {
+        "C:\\Windows\\Fonts\\SegUIVar.ttf",
+        "C:\\Windows\\Fonts\\segoeui.ttf",
+    };
+    const char* kBold[] = {
+        "C:\\Windows\\Fonts\\seguisb.ttf",     // Segoe UI Semibold
+        "C:\\Windows\\Fonts\\segoeuib.ttf",    // Segoe UI Bold
+    };
+    for (const char* path : kRegular) {
+        g_regular = io.Fonts->AddFontFromFileTTF(path, 18.0f);
+        if (g_regular) break;
+    }
+    for (const char* path : kBold) {
+        g_bold = io.Fonts->AddFontFromFileTTF(path, 18.0f);
+        if (g_bold) break;
+    }
     if (!g_regular) g_regular = io.Fonts->AddFontDefault();
     if (!g_bold) g_bold = g_regular;
 }
