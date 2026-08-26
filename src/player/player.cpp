@@ -27,7 +27,18 @@ struct WindowState {
     bool modeTransition = false;
     ImVec2 fullScreenPos{-1.f, -1.f};
     bool fullScreenPosValid = false;
+    // How big the user dragged the card, as a multiple of the mode-s base size.
+    // Without this the card had no memory of its own size: DesiredSize() always
+    // returns the BASE size for the mode, so every frame that re-applied a size
+    // -- a mode change, the tail of a transition -- threw the drag away and the
+    // card snapped back. One scalar is enough because resizing is uniform, and
+    // keeping it here also carries the size across mode switches.
+    float userScale = 1.f;
 };
+
+constexpr float kMinUserScale = 0.78f;
+constexpr float kMaxUserScaleCompact = 1.70f;
+constexpr float kMaxUserScaleExpanded = 1.55f;
 
 float g_uiScale = 1.0f;
 
@@ -69,8 +80,18 @@ void ApplyUniformScale(ImGuiSizeCallbackData* data) {
     const float denom = a->baseW * a->baseW + a->baseH * a->baseH;
     float s = (a->baseW * data->DesiredSize.x + a->baseH * data->DesiredSize.y) / denom;
     s = std::clamp(s, a->minScale, a->maxScale);
-    data->DesiredSize.x = a->baseW * s;
-    data->DesiredSize.y = a->baseH * s;
+    // ROUND, do not let the result stay fractional.
+    //
+    // The projection returns a fractional size (e.g. 416.93 x 684.05) and ImGui
+    // then FLOORS the window size to 416 x 684. Next frame that floored size
+    // projects to a slightly smaller s, which floors again -- a feedback loop
+    // that walked the card ~1px smaller every frame until it crept all the way
+    // back to its base size. That is the resize "snapping back".
+    //
+    // Rounding to whole pixels here makes the mapping a fixed point: the same
+    // size in gives the same size out, so once the drag ends the card holds.
+    data->DesiredSize.x = std::floor(a->baseW * s + 0.5f);
+    data->DesiredSize.y = std::floor(a->baseH * s + 0.5f);
 }
 
 ImVec2 DesiredSize(const ImGuiViewport* vp, bool fullScreen, bool artworkView,
@@ -138,9 +159,15 @@ void DrawMusicPlayer() {
 
     const bool firstFrame = !st.initialized;
     const bool modeChanged = st.previousMode >= 0 && st.previousMode != mode;
+    const float maxUserScale = compactMode ? kMaxUserScaleCompact
+                                           : kMaxUserScaleExpanded;
+    st.userScale = std::clamp(st.userScale, kMinUserScale, maxUserScale);
+    // Everything below sizes against the user-s scale, not the raw base.
+    const ImVec2 scaledDesired(desiredSize.x * st.userScale,
+                               desiredSize.y * st.userScale);
     if (firstFrame) {
-        st.animatedSize = desiredSize;
-        st.lastSize = desiredSize;
+        st.animatedSize = scaledDesired;
+        st.lastSize = scaledDesired;
     } else if (modeChanged) {
         st.animatedSize = st.lastSize;
         if (mode == 2) {
@@ -152,15 +179,15 @@ void DrawMusicPlayer() {
     if (st.modeTransition) {
         const float dt = std::min(ImGui::GetIO().DeltaTime, 0.05f);
         const float blend = 1.f - std::exp(-13.f * dt);
-        st.animatedSize.x += (desiredSize.x - st.animatedSize.x) * blend;
-        st.animatedSize.y += (desiredSize.y - st.animatedSize.y) * blend;
-        if (std::abs(st.animatedSize.x - desiredSize.x) < 0.35f &&
-            std::abs(st.animatedSize.y - desiredSize.y) < 0.35f) {
-            st.animatedSize = desiredSize;
+        st.animatedSize.x += (scaledDesired.x - st.animatedSize.x) * blend;
+        st.animatedSize.y += (scaledDesired.y - st.animatedSize.y) * blend;
+        if (std::abs(st.animatedSize.x - scaledDesired.x) < 0.35f &&
+            std::abs(st.animatedSize.y - scaledDesired.y) < 0.35f) {
+            st.animatedSize = scaledDesired;
             st.modeTransition = false;
         }
     }
-    const ImVec2 requestedSize = st.modeTransition ? st.animatedSize : desiredSize;
+    const ImVec2 requestedSize = st.modeTransition ? st.animatedSize : scaledDesired;
     if (firstFrame || modeChanged || st.modeTransition || fullScreen)
         ImGui::SetNextWindowSize(requestedSize, ImGuiCond_Always);
     if (!fullScreen && !st.modeTransition) {
@@ -169,8 +196,8 @@ void DrawMusicPlayer() {
         // layout does not support; now they scale exactly like the compact card.
         g_aspectLock.baseW = desiredSize.x;
         g_aspectLock.baseH = desiredSize.y;
-        g_aspectLock.minScale = 0.78f;
-        g_aspectLock.maxScale = compactMode ? 1.70f : 1.55f;
+        g_aspectLock.minScale = kMinUserScale;
+        g_aspectLock.maxScale = maxUserScale;
         ImGui::SetNextWindowSizeConstraints(
             ImVec2(desiredSize.x * g_aspectLock.minScale,
                    desiredSize.y * g_aspectLock.minScale),
@@ -208,7 +235,13 @@ void DrawMusicPlayer() {
     ImVec2 wp = ImGui::GetWindowPos();
     ImVec2 ws = ImGui::GetWindowSize();
     // Resize is uniform, so width alone defines the scale for the whole card.
-    detail::SetUiScale(desiredSize.x > 1.f ? ws.x / desiredSize.x : 1.f);
+    const float liveScale = desiredSize.x > 1.f ? ws.x / desiredSize.x : 1.f;
+    detail::SetUiScale(liveScale);
+    // Adopt whatever the user dragged to, so it survives the next frame and the
+    // next mode switch. Skipped mid-transition, where the size is ours and not
+    // theirs.
+    if (!st.modeTransition && !firstFrame && !modeChanged)
+        st.userScale = std::clamp(liveScale, kMinUserScale, maxUserScale);
     const bool resizing = std::abs(ws.x - st.lastSize.x) > 0.5f ||
                           std::abs(ws.y - st.lastSize.y) > 0.5f;
     st.lastSize = ws;
