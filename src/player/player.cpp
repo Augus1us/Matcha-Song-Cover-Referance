@@ -437,11 +437,14 @@ void DrawMusicPlayer() {
         const float gripFocus = music_host::animation::Anim(
             ImGui::GetID("##music_resize_focus"), gripHovered, 14.f);
         const ImU32 gripColor = IM_COL32(
-            255, 255, 255, (int)(44.f + gripFocus * 86.f));
-        dl->AddLine(ImVec2(corner.x - 5.f, corner.y),
-                    ImVec2(corner.x, corner.y - 5.f), gripColor, 1.15f);
-        dl->AddLine(ImVec2(corner.x - 10.f, corner.y),
-                    ImVec2(corner.x, corner.y - 10.f), gripColor, 1.15f);
+            255, 255, 255, (int)(26.f + gripFocus * 96.f));
+        // Kept tight to the corner. The longer of these two strokes reached far
+        // enough inward to cross the lyrics button sitting at the same height,
+        // so the grip and the icon overlapped; the reference corner is clean.
+        dl->AddLine(ImVec2(corner.x - 4.f, corner.y),
+                    ImVec2(corner.x, corner.y - 4.f), gripColor, 1.1f);
+        dl->AddLine(ImVec2(corner.x - 8.f, corner.y),
+                    ImVec2(corner.x, corner.y - 8.f), gripColor, 1.1f);
     }
 
     g_cardMin = wp;

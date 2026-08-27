@@ -276,7 +276,10 @@ void DrawTransportControls(const TransportContext& ctx) {
             2, ctx.repeatActive);
         lyricsClicked = utilityButton(
             "lyrics_toggle",
-            ImVec2(fullScreen ? wp.x + Px(14.f) : wp.x + ws.x - edgeInset,
+            // Extra clearance from the right edge so the button does not sit on
+            // top of the resize grip in the corner.
+            ImVec2(fullScreen ? wp.x + Px(14.f)
+                              : wp.x + ws.x - edgeInset - Px(5.f),
                    fullScreen ? wp.y + ws.y - Px(20.f) : cy), 3, showLyrics);
     }
 
