@@ -578,7 +578,13 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
         desc.MipLODBias = 0.f;
         desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
         desc.MinLOD = 0.f;
-        desc.MaxLOD = 0.f;
+        // LOCAL CHANGE (was 0.f): allow sampling the whole mip chain.
+        //
+        // Pinned to mip 0, a large album cover drawn at ~48px sampled roughly
+        // one texel in thirteen, so the thumbnail was blocky and crawled with
+        // aliasing. Generating mips for that texture did nothing while this
+        // clamp stood. The font atlas has a single level, so it is unaffected.
+        desc.MaxLOD = D3D11_FLOAT32_MAX;
         bd->pd3dDevice->CreateSamplerState(&desc, &bd->pTexSamplerLinear);
     }
 

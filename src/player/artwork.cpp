@@ -41,22 +41,45 @@ void ReleaseAtmosphereTexture() {
 }
 
 bool UploadArtTexture(ID3D11Device* dev, const media::NowPlaying& np) {
+    // Full mip chain, not a single level.
+    //
+    // Covers arrive at a few hundred pixels square and the compact header draws
+    // them at ~48px. With one mip level the sampler takes a single texel out of
+    // every ~13, so the thumbnail came out visibly blocky and crawling with
+    // aliasing -- obvious next to the reference, whose thumbnail is clean.
+    // Mips let the GPU sample a properly downscaled level instead.
+    //
+    // GenerateMips writes into the texture, so it cannot be IMMUTABLE and needs
+    // RENDER_TARGET binding; mip 0 is uploaded separately rather than passed as
+    // initial data.
     D3D11_TEXTURE2D_DESC td = {};
     td.Width = np.artW; td.Height = np.artH;
-    td.MipLevels = 1; td.ArraySize = 1;
+    td.MipLevels = 0;                       // 0 = full chain down to 1x1
+    td.ArraySize = 1;
     td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     td.SampleDesc.Count = 1;
-    td.Usage = D3D11_USAGE_IMMUTABLE;
-    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    D3D11_SUBRESOURCE_DATA sd = {};
-    sd.pSysMem = np.artBgra;
-    sd.SysMemPitch = np.artW * 4;
-    if (FAILED(dev->CreateTexture2D(&td, &sd, &s_artTex))) return false;
+    td.Usage = D3D11_USAGE_DEFAULT;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+    td.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+    if (FAILED(dev->CreateTexture2D(&td, nullptr, &s_artTex))) return false;
+
     D3D11_SHADER_RESOURCE_VIEW_DESC svd = {};
     svd.Format = td.Format;
     svd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    svd.Texture2D.MipLevels = 1;
-    dev->CreateShaderResourceView(s_artTex, &svd, &s_artSrv);
+    svd.Texture2D.MipLevels = (UINT)-1;     // every level
+    if (FAILED(dev->CreateShaderResourceView(s_artTex, &svd, &s_artSrv))) {
+        ReleaseArtTexture();
+        return false;
+    }
+
+    ID3D11DeviceContext* ctx = nullptr;
+    dev->GetImmediateContext(&ctx);
+    if (!ctx) { ReleaseArtTexture(); return false; }
+    ctx->UpdateSubresource(s_artTex, 0, nullptr, np.artBgra,
+                           (UINT)np.artW * 4u, 0);
+    ctx->GenerateMips(s_artSrv);
+    ctx->Release();
+
     s_artW = np.artW;
     s_artH = np.artH;
     return true;
