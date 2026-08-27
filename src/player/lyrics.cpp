@@ -321,8 +321,11 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                 // absorbs the difference for whichever line is current.
                 const int wrapped = LyricWrapLineCount(
                     ctx.bold, activeSize, g_cache[i].text.c_str(), lyricWidth);
+                // Gap tuned to the reference's measured rhythm: it runs 33px
+                // per line in a 496px card (0.0665) where ours ran 36 in 483
+                // (0.0745) -- about 12% looser.
                 g_lineHeights[i] = wrapped * inactiveSize * kLyricLeading +
-                    Px(ctx.fullScreen ? 20.f : 14.f);
+                    Px(ctx.fullScreen ? 17.f : 11.f);
                 g_contentHeight += g_lineHeights[i];
             }
         }

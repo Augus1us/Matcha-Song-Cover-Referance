@@ -169,7 +169,9 @@ MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
             Bucket& bucket = buckets[(size_t)(ri * kLevels + gi) * kLevels + bi];
             // Weight by area, but let saturated pixels count for more so a small
             // vivid subject can still beat a large flat background.
-            const float w = alpha * (0.55f + sat * 1.25f);
+            // Same reasoning as the score: area is the signal, saturation is
+            // a nudge. A steep weight here re-introduces the same bias.
+            const float w = alpha * (0.85f + sat * 0.35f);
             bucket.r += c.r * w; bucket.g += c.g * w; bucket.b += c.b * w;
             bucket.weight += w;
         }
@@ -196,8 +198,17 @@ MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
         // had, blown-out ones leave nothing for white text to sit on.
         const float lumWindow = std::exp(-((lum - 0.58f) * (lum - 0.58f)) / 0.10f);
         // sqrt on the weight so a huge flat area cannot bury everything else.
+        // Saturation nudges the ranking; it does not decide it.
+        //
+        // At (0.35 + sat*1.55) a small vivid patch beat the whole rest of the
+        // cover: on one reference the winner was RGB(109,145,219) -- one
+        // character's blue hair -- while the cover's own mean is (139,120,125),
+        // warm. The card came out cool against a warm cover, and the reference
+        // tracks the cover. Flattening this lets frequency decide, which is
+        // what "most common colour" is supposed to mean, with saturation only
+        // breaking ties between similarly common colours.
         const float score = std::sqrt(bucket.weight) *
-                            (0.35f + sat * 1.55f) * (0.30f + lumWindow);
+                            (0.80f + sat * 0.45f) * (0.30f + lumWindow);
         candidates.push_back({ c, bucket.weight, score });
     }
     if (candidates.empty()) return fallback;
@@ -236,9 +247,24 @@ MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
     // read against it -- pushed to 0.84 the card was lighter than the reference
     // and the lyrics washed out, which is the trade-off that matters here since
     // the text is white by design and the blurred cover is what separates it.
-    result.top = ToVec4(Tone(Mix(a, overall, 0.30f), 0.70f, 0.70f, 0.13f));
-    result.bottom = ToVec4(Tone(Mix(Mix(a, b, 0.45f), overall, 0.34f),
-                                0.61f, 0.70f, 0.12f));
+    // Measured against the reference on the same cover: its card sits at
+    // RGB(85,72,76), luminance 78, and is warm-neutral -- far less saturated
+    // than the tint the cover would suggest. Ours had drifted to (118,111,137),
+    // luminance 122: 57% too bright and cool where the reference is warm.
+    // Value and chroma are pulled back to land on those numbers.
+    // Surface hue comes from the cover MEAN, not the dominant bucket.
+    //
+    // The reference's card is essentially a desaturated version of the cover's
+    // average colour -- warm when the cover is warm, neutral when it is not.
+    // The most-frequent bucket cannot carry the surface here: on this cover the
+    // top bucket is RGB(109,145,219), one character's blue hair (R-B -109), so
+    // any surface built from it stays cool no matter how it is mixed, while the
+    // cover's own mean is (139,120,125), warm (+14) -- which is what the
+    // reference matches. Only a small amount of the dominant is folded back in
+    // for a little life. The frequent colours still drive the accents below.
+    result.top = ToVec4(Tone(Mix(overall, a, 0.14f), 0.35f, 0.34f, 0.06f));
+    result.bottom = ToVec4(Tone(Mix(overall, Mix(a, b, 0.5f), 0.12f),
+                                0.28f, 0.34f, 0.05f));
     result.accentA = ToVec4(Tone(a, 0.70f, 1.10f, 0.26f));
     result.accentB = ToVec4(Tone(b, 0.64f, 1.08f, 0.24f));
     result.accentC = ToVec4(Tone(c, 0.66f, 1.08f, 0.24f));
