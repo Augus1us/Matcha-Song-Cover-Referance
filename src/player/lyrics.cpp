@@ -144,7 +144,14 @@ void DrawArtworkLyricOverlay(ImDrawList* dl, ImFont* regular, ImFont* bold,
     const std::string artTitle = Ellipsize(title ? title : "", bold, 19.f, textWidth);
     std::string artByline = artist ? artist : "";
     if (album && album[0]) {
-        if (!artByline.empty()) artByline += " \xE2\x80\x94 ";
+        {
+            // Same spaced em dash as the compact header, by byte value:
+            // escapes in these files have been collapsed in editing before,
+            // and the two layouts had drifted to different spacing.
+            static const char kDash[] = { 32, 32, (char)0xE2, (char)0x80,
+                                          (char)0x94, 32, 32, 0 };
+            if (!artByline.empty()) artByline += kDash;
+        }
         artByline += album;
     }
     artByline = Ellipsize(artByline, bold, 14.6f, textWidth);
