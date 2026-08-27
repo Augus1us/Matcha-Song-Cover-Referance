@@ -103,25 +103,31 @@ void EndFrame() {
 
 void InitializeFonts() {
     ImGuiIO& io = ImGui::GetIO();
-    // Matcha is an Apple app and sets its type in SF Pro. SF Pro is proprietary
-    // and cannot be redistributed, so the closest face that ships with Windows
-    // is used instead: Segoe UI Variable, Microsoft's answer to SF Pro, whose
-    // letterforms are noticeably rounder and more open than classic Segoe UI.
+    // The reference sets its type in SF Pro. SF Pro is Apple's and cannot be
+    // redistributed, so Inter is bundled instead -- it is the typeface designed
+    // as an SF Pro stand-in, and its SIL Open Font Licence explicitly permits
+    // shipping it alongside software. See assets/fonts/LICENSE.txt.
     //
-    // Titles and active lyrics take SEMIBOLD, not Bold. Apple sets those in
-    // SF Pro Semibold; Segoe UI Bold is a full step heavier and made the card
-    // read chunkier than the reference at the same size.
+    // Regular and SEMIBOLD, matching how Apple sets body and titles. Bold is a
+    // step too heavy and made the card read chunkier than the reference.
     //
-    // Each entry falls back to classic Segoe UI, which exists on every
-    // supported Windows, so a missing variable font degrades instead of
-    // failing outright.
+    // Falls back to what Windows ships if the bundled files are missing, so a
+    // stripped checkout still runs: Segoe UI Variable first (Microsoft's own
+    // answer to SF Pro), then classic Segoe UI.
+    // Forward slashes throughout: the Windows file APIs accept them, and a
+    // backslash escape in this file has been silently collapsed more than once
+    // in editing, which turns the path into garbage the loader cannot find.
     const char* kRegular[] = {
-        "C:\\Windows\\Fonts\\SegUIVar.ttf",
-        "C:\\Windows\\Fonts\\segoeui.ttf",
+        "assets/fonts/Inter-Regular.ttf",
+        "../assets/fonts/Inter-Regular.ttf",
+        "C:/Windows/Fonts/SegUIVar.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
     };
     const char* kBold[] = {
-        "C:\\Windows\\Fonts\\seguisb.ttf",     // Segoe UI Semibold
-        "C:\\Windows\\Fonts\\segoeuib.ttf",    // Segoe UI Bold
+        "assets/fonts/Inter-SemiBold.ttf",
+        "../assets/fonts/Inter-SemiBold.ttf",
+        "C:/Windows/Fonts/seguisb.ttf",
+        "C:/Windows/Fonts/segoeuib.ttf",
     };
     for (const char* path : kRegular) {
         g_regular = io.Fonts->AddFontFromFileTTF(path, 18.0f);
@@ -134,6 +140,7 @@ void InitializeFonts() {
     if (!g_regular) g_regular = io.Fonts->AddFontDefault();
     if (!g_bold) g_bold = g_regular;
 }
+
 
 void SetWindow(HWND window) {
     g_window = window;

@@ -1,0 +1,12 @@
+Inter is licensed under the SIL Open Font License, Version 1.1.
+
+Copyright (c) 2016-present The Inter Project Authors
+https://github.com/rsms/inter
+
+The SIL Open Font License permits redistribution and bundling of the font
+files with software, including for commercial use, provided the fonts are not
+sold on their own and this notice is retained. Full licence text:
+https://openfontlicense.org/
+
+Inter is used here as the closest freely-redistributable stand-in for SF Pro,
+which the reference application uses and which cannot be redistributed.
