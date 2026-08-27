@@ -132,8 +132,10 @@ void DrawArtworkLyricOverlay(ImDrawList* dl, ImFont* regular, ImFont* bold,
                              ImVec2 wp, ImVec2 ws, const char* title,
                              const char* artist, const char* album,
                              int activeLyric) {
-    const float artExtent = std::min(ws.x - 2.f, std::max(120.f, ws.y - 2.f));
-    const float artBottom = wp.y + 1.f + artExtent;
+    // The cover fills the whole card now (cover-fit, not a square sized by the
+    // width), so the overlay clips to the card rather than to where a square
+    // cover used to stop -- that old bound cut the bottom off the text.
+    const float artBottom = wp.y + ws.y - 1.f;
     const float textX = wp.x + 8.f;
     const float textWidth = ws.x - 14.f;
     dl->PushClipRect(ImVec2(wp.x + 1.f, wp.y + 1.f),
@@ -160,6 +162,14 @@ void DrawArtworkLyricOverlay(ImDrawList* dl, ImFont* regular, ImFont* bold,
                     IM_COL32(0, 0, 0, 82), artByline.c_str());
         dl->AddText(bold, 14.6f, ImVec2(textX, titleY + 24.f),
                     IM_COL32(255, 255, 255, 190), artByline.c_str());
+    }
+    // Page dots, matching the lyrics panel and the reference's artwork view.
+    {
+        const float dotR = 2.4f, step = dotR * 4.2f;
+        const float dotY = titleY + (artByline.empty() ? 26.f : 44.f);
+        for (int i = 0; i < 3; ++i)
+            dl->AddCircleFilled(ImVec2(textX + dotR + i * step, dotY), dotR,
+                                IM_COL32(255, 255, 255, i == 0 ? 200 : 96), 12);
     }
     if (hasLyric) {
         dl->AddText(bold, 18.f, ImVec2(textX + 1.f, lyricY + 2.f),
@@ -233,7 +243,11 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
 
     const bool lyricsChanged = g_layoutRevision != g_cacheRevision;
     const float S = ctx.uiScale;
-    float lyricsTop = ctx.fullScreen ? wp.y + ws.y * 0.055f : wp.y + Px(82.f);
+    // Fullscreen started the column at 5.5% of the card height, which put the
+    // first lyric on top of the page dots -- both wanted the same few pixels.
+    // Starting lower clears them and matches where the reference begins its
+    // lyrics relative to the artwork.
+    float lyricsTop = ctx.fullScreen ? wp.y + ws.y * 0.135f : wp.y + Px(82.f);
     // 112 used to reserve a strip for the Sync pill and its dots. That control
     // is gone, but the reservation stayed, leaving a tall empty band between
     // the last lyric and the progress bar. The panel now runs down to just
@@ -250,9 +264,9 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
     // roughly 5% of the card width against the ~3.2% these worked out to, which
     // is most of why ours read as small and cramped beside it.
     float inactiveSize = ctx.fullScreen
-        ? 22.f * S : std::clamp(ws.x * 0.055f, 14.5f * S, 18.5f * S);
+        ? 25.f * S : std::clamp(ws.x * 0.055f, 14.5f * S, 18.5f * S);
     float activeSize = ctx.fullScreen
-        ? 27.f * S : std::clamp(ws.x * 0.063f, 16.5f * S, 21.f * S);
+        ? 31.f * S : std::clamp(ws.x * 0.063f, 16.5f * S, 21.f * S);
     const ImVec2 viewMin(lyricX, lyricsTop);
     const ImVec2 viewMax(lyricX + lyricWidth, lyricsTop + lyricsHeight);
 
@@ -415,23 +429,22 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                 // low-alpha white simply disappears -- so the floors are
                 // raised. The falloff shape is unchanged; only the range moves.
                 float distanceAlpha = ctx.fullScreen
-                    ? (distance == 0 ? 0.62f :
-                       distance == 1 ? 0.44f :
-                       distance == 2 ? 0.26f : 0.14f)
-                    : std::max(0.30f, 0.70f - distance * 0.09f);
+                    ? (distance == 0 ? 0.74f :
+                       distance == 1 ? 0.56f :
+                       distance == 2 ? 0.38f : 0.22f)
+                    : std::max(0.44f, 0.84f - distance * 0.08f);
                 float alpha = distanceAlpha + (1.f - distanceAlpha) * focus;
                 alpha = std::min(1.f, alpha + hover * 0.18f);
                 float size = inactiveSize + (activeSize - inactiveSize) * focus;
-                // Cross-fade the weight across the middle of the transition.
-                // Switching fonts outright at focus > 0.48 made the line pop
-                // from regular to bold in a single frame while its size was
-                // still easing -- the size animated, the weight jumped, and the
-                // change read as broken rather than smooth.
-                ImFont* font = focus > 0.5f ? ctx.bold : ctx.regular;
-                const float blendLo = 0.30f, blendHi = 0.70f;
-                float weightBlend = std::clamp(
-                    (focus - blendLo) / (blendHi - blendLo), 0.f, 1.f);
-                const bool crossFading = focus > blendLo && focus < blendHi;
+                // Every lyric is set in the SAME weight, the way the reference
+                // does -- the current line is distinguished by size and opacity,
+                // not by switching typeface. Alternating regular and bold meant
+                // the line changed shape as it became current, and needed a
+                // cross-fade to hide the jump; using one weight removes both the
+                // jump and the workaround.
+                ImFont* font = ctx.bold;
+                const bool crossFading = false;
+                const float weightBlend = 1.f;
                 float depthOffset = ctx.fullScreen ? 0.f :
                     std::min(5.f, distance * 1.1f) * (1.f - focus) * S;
                 ImVec2 textPos(lyricX + depthOffset + hover * 3.f * S,

@@ -229,9 +229,16 @@ MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
     MusicPalette result;
     // Surface: lead with the dominant colour, settled into a light, low-chroma
     // wash so it reads as a tinted surface rather than a slab of the cover.
-    result.top = ToVec4(Tone(Mix(a, overall, 0.30f), 0.76f, 0.52f, 0.09f));
+    // Light, but still clearly tinted by the cover. Dropping saturation as far
+    // as 0.44 to get the brightness up left the card almost pastel; the
+    // reference keeps more chroma than that.
+    // Mid-tone, not pale. The surface has to stay dark enough for white text to
+    // read against it -- pushed to 0.84 the card was lighter than the reference
+    // and the lyrics washed out, which is the trade-off that matters here since
+    // the text is white by design and the blurred cover is what separates it.
+    result.top = ToVec4(Tone(Mix(a, overall, 0.30f), 0.70f, 0.70f, 0.13f));
     result.bottom = ToVec4(Tone(Mix(Mix(a, b, 0.45f), overall, 0.34f),
-                                0.67f, 0.52f, 0.08f));
+                                0.61f, 0.70f, 0.12f));
     result.accentA = ToVec4(Tone(a, 0.70f, 1.10f, 0.26f));
     result.accentB = ToVec4(Tone(b, 0.64f, 1.08f, 0.24f));
     result.accentC = ToVec4(Tone(c, 0.66f, 1.08f, 0.24f));
@@ -444,8 +451,8 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
     // At 0.28-0.46 the card was mostly the dark layers underneath showing
     // through, which is what kept it muddy no matter how the palette was tuned.
     // Artwork mode stays lower: there the cover itself is the surface.
-    const float paletteOpacity = fullScreen ? 0.72f
-        : (artworkView ? 0.46f : (showLyrics ? 0.88f : 0.90f));
+    const float paletteOpacity = fullScreen ? 0.80f
+        : (artworkView ? 0.46f : (showLyrics ? 0.94f : 0.94f));
     DrawRoundedGradient(dl,
         ImVec2(min.x + 1.f, min.y + 1.f), ImVec2(max.x - 1.f, max.y - 1.f),
         Color(surfaceTop, paletteOpacity),

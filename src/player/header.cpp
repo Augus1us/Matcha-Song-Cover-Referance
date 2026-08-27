@@ -48,8 +48,10 @@ void DrawFullscreenHeader(const HeaderContext& ctx) {
         dl->AddRectFilled(artMin, artMax, IM_COL32(255, 255, 255, 16), 8.f);
     }
 
+    // Fullscreen type ran smaller than the reference, which sets its title and
+    // sub-line noticeably larger against the same artwork size.
     const std::string title = Ellipsize(ctx.title ? ctx.title : "",
-                                         ctx.bold, 14.f, ctx.fullColumnWidth);
+                                         ctx.bold, 17.f, ctx.fullColumnWidth);
     // Same "Artist - Album" sub-line as the compact header; the fullscreen view
     // was still showing the artist alone.
     std::string fullSub = ctx.artist ? ctx.artist : "";
@@ -61,13 +63,13 @@ void DrawFullscreenHeader(const HeaderContext& ctx) {
         fullSub += ctx.album;
     }
     const std::string artist = Ellipsize(fullSub.c_str(),
-                                          ctx.regular, 10.5f, ctx.fullColumnWidth);
+                                          ctx.regular, 12.5f, ctx.fullColumnWidth);
     const float infoY = artMax.y + 37.f;
-    music_host::DrawText(dl, ctx.bold, 14.f, ImVec2(ctx.fullColumnX, infoY),
+    music_host::DrawText(dl, ctx.bold, 17.f, ImVec2(ctx.fullColumnX, infoY),
         IM_COL32(255, 255, 255, 248), title.c_str());
     if (!artist.empty())
-        music_host::DrawText(dl, ctx.regular, 10.5f,
-            ImVec2(ctx.fullColumnX, infoY + 18.f),
+        music_host::DrawText(dl, ctx.regular, 12.5f,
+            ImVec2(ctx.fullColumnX, infoY + 21.f),
             IM_COL32(255, 255, 255, 184), artist.c_str());
 
     const ImVec2 closeMin(wp.x + ws.x - 32.f, wp.y + 14.f);

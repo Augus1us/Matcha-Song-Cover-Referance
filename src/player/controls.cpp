@@ -141,7 +141,7 @@ void DrawTransportControls(const TransportContext& ctx) {
     fmt(displayPosition, pb, sizeof(pb));
     fmt(std::max(0.0, ctx.duration - displayPosition), remaining, sizeof(remaining));
     std::snprintf(rb, sizeof(rb), "-%s", remaining);
-    const float timeSize = (compactMusic ? 9.5f : (fullScreen ? 9.f : 10.f)) * S;
+    const float timeSize = (compactMusic ? 9.5f : (fullScreen ? 10.5f : 10.f)) * S;
     const float timeY = barY + Px(6.f);
     music_host::DrawText(dl, ctx.regular, timeSize, ImVec2(barMin.x, timeY),
         IM_COL32(255, 255, 255, 136), pb);
@@ -149,7 +149,7 @@ void DrawTransportControls(const TransportContext& ctx) {
         ImVec2(barMax.x - music_host::Measure(ctx.regular, timeSize, rb).x, timeY),
         IM_COL32(255, 255, 255, 136), rb);
     const char* status = "Lossless";
-    const float statusTextSize = (compactMusic ? 10.f : (fullScreen ? 9.f : 10.5f)) * S;
+    const float statusTextSize = (compactMusic ? 10.f : (fullScreen ? 10.5f : 10.5f)) * S;
     ImVec2 statusSize = music_host::Measure(ctx.bold, statusTextSize, status);
     music_host::DrawText(dl, ctx.bold, statusTextSize,
         ImVec2((barMin.x + barMax.x - statusSize.x) * 0.5f, timeY),
@@ -169,10 +169,10 @@ void DrawTransportControls(const TransportContext& ctx) {
     const float outerReserve = Px(compactMusic ? 30.f : 56.f);
     const float usable = std::max(60.f, ws.x - outerReserve * 2.f);
     const float wantSpacing = (compactMusic ? 37.f
-        : (fullScreen ? 46.f : (artworkView ? 69.f : 35.f))) * S;
+        : (fullScreen ? 56.f : (artworkView ? 69.f : 35.f))) * S;
     const float controlSpacing = std::min(wantSpacing, usable * 0.5f * 0.62f);
-    const float primaryRadius = (compactMusic ? 12.f : (fullScreen ? 16.f : 15.f)) * S;
-    const float secondaryRadius = (compactMusic ? 9.5f : (fullScreen ? 13.f : 13.f)) * S;
+    const float primaryRadius = (compactMusic ? 12.f : (fullScreen ? 19.f : 15.f)) * S;
+    const float secondaryRadius = (compactMusic ? 9.5f : (fullScreen ? 15.5f : 13.f)) * S;
     struct Ctl { float dx; int kind; } ctls[3] = {
         {-controlSpacing, 0}, {0, -1}, {controlSpacing, 3}
     };

@@ -129,9 +129,14 @@ void BuildAtmosphereTexture(ID3D11Device* dev, const media::NowPlaying& np) {
         }
         atmosphere.swap(scratch);
     };
-    for (int pass = 0; pass < 3; ++pass) {
-        blurAxis(true, 24);
-        blurAxis(false, 24);
+    // Blur hard. The blurred cover is what separates white text from the card --
+    // any structure left in it competes with the glyphs and the text stops
+    // reading. Four passes at a wider radius leave a smooth wash with no
+    // recognisable shapes, which is what the reference sits its lyrics on.
+    // Cost is irrelevant: this runs once per track, not per frame.
+    for (int pass = 0; pass < 4; ++pass) {
+        blurAxis(true, 34);
+        blurAxis(false, 34);
     }
 
     D3D11_TEXTURE2D_DESC td = {};
