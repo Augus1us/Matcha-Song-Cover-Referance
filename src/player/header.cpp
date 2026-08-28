@@ -35,23 +35,27 @@ void DrawFullscreenHeader(const HeaderContext& ctx) {
     ImDrawList* dl = ctx.drawList;
     const ImVec2 wp = ctx.windowPosition;
     const ImVec2 ws = ctx.windowSize;
-    const ImVec2 artMin(ctx.fullArtX, wp.y + ws.y * 0.19f);
+    const ImVec2 artMin(ctx.fullArtX, ctx.fullArtY);
     const ImVec2 artMax(artMin.x + ctx.fullArtSize, artMin.y + ctx.fullArtSize);
     if (ctx.haveArt) {
         dl->AddRectFilled(ImVec2(artMin.x + 3.f, artMin.y + 6.f),
                           ImVec2(artMax.x + 3.f, artMax.y + 6.f),
-                          IM_COL32(0, 0, 0, 118), 5.f);
+                          IM_COL32(0, 0, 0, 118), 10.f);
         dl->AddImageRounded(AlbumArtTexture(), artMin, artMax,
-                            ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 5.f);
-        dl->AddRect(artMin, artMax, IM_COL32(0, 0, 0, 190), 5.f, 0, 1.4f);
+                            ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 10.f);
+        dl->AddRect(artMin, artMax, IM_COL32(0, 0, 0, 190), 10.f, 0, 1.4f);
     } else {
         dl->AddRectFilled(artMin, artMax, IM_COL32(255, 255, 255, 16), 8.f);
     }
 
     // Fullscreen type ran smaller than the reference, which sets its title and
     // sub-line noticeably larger against the same artwork size.
+    // Type scales with the art. A ~370px cover wants a bigger title than the
+    // 158px one the old fixed 17px was set for.
+    const float titleSize = std::clamp(ctx.fullArtSize * 0.072f, 17.f, 30.f);
+    const float subSize   = std::clamp(ctx.fullArtSize * 0.052f, 12.5f, 20.f);
     const std::string title = Ellipsize(ctx.title ? ctx.title : "",
-                                         ctx.bold, 17.f, ctx.fullColumnWidth);
+                                         ctx.bold, titleSize, ctx.fullColumnWidth);
     // Same "Artist - Album" sub-line as the compact header; the fullscreen view
     // was still showing the artist alone.
     std::string fullSub = ctx.artist ? ctx.artist : "";
@@ -63,13 +67,13 @@ void DrawFullscreenHeader(const HeaderContext& ctx) {
         fullSub += ctx.album;
     }
     const std::string artist = Ellipsize(fullSub.c_str(),
-                                          ctx.regular, 12.5f, ctx.fullColumnWidth);
-    const float infoY = artMax.y + 37.f;
-    music_host::DrawText(dl, ctx.bold, 17.f, ImVec2(ctx.fullColumnX, infoY),
+                                          ctx.regular, subSize, ctx.fullColumnWidth);
+    const float infoY = artMax.y + titleSize * 1.9f;
+    music_host::DrawText(dl, ctx.bold, titleSize, ImVec2(ctx.fullColumnX, infoY),
         IM_COL32(255, 255, 255, 248), title.c_str());
     if (!artist.empty())
-        music_host::DrawText(dl, ctx.regular, 12.5f,
-            ImVec2(ctx.fullColumnX, infoY + 21.f),
+        music_host::DrawText(dl, ctx.regular, subSize,
+            ImVec2(ctx.fullColumnX, infoY + titleSize * 1.28f),
             IM_COL32(255, 255, 255, 184), artist.c_str());
 
     const ImVec2 closeMin(wp.x + ws.x - 32.f, wp.y + 14.f);
@@ -98,7 +102,15 @@ void DrawFullscreenHeader(const HeaderContext& ctx) {
                 ImVec2(closeMin.x + 16.f, closeMin.y + 16.f), closeColor, 1.5f);
     dl->AddLine(ImVec2(closeMin.x + 16.f, closeMin.y + 8.f),
                 ImVec2(closeMin.x + 8.f, closeMin.y + 16.f), closeColor, 1.5f);
-    if (closeClicked || restoreClicked) {
+    // The □ takes the WINDOW to true fullscreen (fills the monitor); it does not
+    // leave this view. The × exits the expanded view back to the compact card --
+    // and drops OS fullscreen too, so closing never strands the window frameless.
+    if (restoreClicked) {
+        music_host::overlay::ToggleFullscreenWindow();
+    }
+    if (closeClicked) {
+        if (music_host::overlay::IsFullscreenWindow())
+            music_host::overlay::ToggleFullscreenWindow();
         if (ctx.fullScreenOut) *ctx.fullScreenOut = false;
         if (ctx.showLyrics) *ctx.showLyrics = true;
         if (ctx.artworkView) *ctx.artworkView = false;
@@ -112,23 +124,38 @@ void DrawArtworkBackButton(const HeaderContext& ctx) {
     const ImVec2 wp = ctx.windowPosition;
     const ImVec2 ws = ctx.windowSize;
     const float S = ctx.uiScale;
-    const float bw = Px(30.f), bh = Px(28.f);
-    const ImVec2 backMin(wp.x + Px(5.f), wp.y + Px(13.f));
+    const float bw = Px(34.f), bh = Px(34.f);
+    const ImVec2 backMin(wp.x + Px(8.f), wp.y + Px(12.f));
     ImGui::SetCursorScreenPos(backMin);
     ImGui::InvisibleButton("##art_back", ImVec2(bw, bh));
     const bool backHovered = ImGui::IsItemHovered();
     const bool backClicked = ImGui::IsItemClicked();
-    if (backHovered) {
-        dl->AddRectFilled(backMin, ImVec2(backMin.x + bw, backMin.y + bh),
-                          IM_COL32(8, 10, 14, 158), Px(9.f));
-        dl->AddRect(backMin, ImVec2(backMin.x + bw, backMin.y + bh),
-                    IM_COL32(255, 255, 255, 86), Px(9.f), 0, 1.f);
-    }
-    const ImU32 arrow = IM_COL32(255, 255, 255, backHovered ? 245 : 92);
-    dl->AddLine(ImVec2(backMin.x + Px(18.f), backMin.y + Px(8.f)),
-                ImVec2(backMin.x + Px(12.f), backMin.y + Px(14.f)), arrow, 1.7f * S);
-    dl->AddLine(ImVec2(backMin.x + Px(12.f), backMin.y + Px(14.f)),
-                ImVec2(backMin.x + Px(18.f), backMin.y + Px(20.f)), arrow, 1.7f * S);
+    const float backHv = music_host::animation::Anim(
+        ImGui::GetID("##art_back_hv"), backHovered, 20.f);
+    const ImVec2 backCtr(backMin.x + bw * 0.5f, backMin.y + bh * 0.5f);
+    // Always-on subtle backing so the arrow reads on ANY cover, darkening on
+    // hover. The reference keeps the control visible without a hover; a bare
+    // white line vanished on pale or busy art. A soft dark disc behind it does
+    // the job without a hard chrome button.
+    dl->AddCircleFilled(backCtr, bw * 0.46f,
+                        IM_COL32(6, 8, 12, (int)(70 + 96 * backHv)), 28);
+    if (backHv > 0.01f)
+        dl->AddCircle(backCtr, bw * 0.46f,
+                      IM_COL32(255, 255, 255, (int)(70 * backHv)), 28, 1.f);
+    // Bigger chevron with a drop shadow, centred in the disc.
+    const float ar = Px(6.5f) * (1.f + 0.06f * backHv);
+    const ImVec2 aTop(backCtr.x + ar * 0.55f, backCtr.y - ar);
+    const ImVec2 aMid(backCtr.x - ar * 0.62f, backCtr.y);
+    const ImVec2 aBot(backCtr.x + ar * 0.55f, backCtr.y + ar);
+    const ImU32 arrowShadow = IM_COL32(0, 0, 0, 150);
+    const ImU32 arrow = IM_COL32(255, 255, 255, backHovered ? 255 : 236);
+    const float sx = 1.2f * S, sy = 1.5f * S;
+    dl->AddLine(ImVec2(aTop.x + sx, aTop.y + sy), ImVec2(aMid.x + sx, aMid.y + sy),
+                arrowShadow, 3.0f * S);
+    dl->AddLine(ImVec2(aMid.x + sx, aMid.y + sy), ImVec2(aBot.x + sx, aBot.y + sy),
+                arrowShadow, 3.0f * S);
+    dl->AddLine(aTop, aMid, arrow, 2.1f * S);
+    dl->AddLine(aMid, aBot, arrow, 2.1f * S);
 
     const ImVec2 aaCenter(wp.x + ws.x - Px(27.f), wp.y + Px(31.f));
     ImGui::SetCursorScreenPos(ImVec2(aaCenter.x - bw * 0.5f, aaCenter.y - bh * 0.5f));
@@ -137,11 +164,14 @@ void DrawArtworkBackButton(const HeaderContext& ctx) {
     const bool aaClicked = ImGui::IsItemClicked();
     const bool lyricsVisible = ctx.showLyrics && *ctx.showLyrics;
     const ImVec2 aaSize = music_host::Measure(ctx.bold, 15.f * S, "Aa");
+    // Same shadow treatment for Aa.
+    const ImVec2 aaPos(aaCenter.x - aaSize.x * 0.5f, aaCenter.y - aaSize.y * 0.5f);
     music_host::DrawText(dl, ctx.bold, 15.f * S,
-        ImVec2(aaCenter.x - aaSize.x * 0.5f,
-               aaCenter.y - aaSize.y * 0.5f),
+        ImVec2(aaPos.x + 1.2f * S, aaPos.y + 1.6f * S),
+        IM_COL32(0, 0, 0, 120), "Aa");
+    music_host::DrawText(dl, ctx.bold, 15.f * S, aaPos,
         IM_COL32(255, 255, 255,
-            aaHovered ? 238 : (lyricsVisible ? 186 : 112)), "Aa");
+            aaHovered ? 255 : (lyricsVisible ? 232 : 210)), "Aa");
     if (backClicked && ctx.artworkView) *ctx.artworkView = false;
     if (aaClicked && ctx.showLyrics) *ctx.showLyrics = !*ctx.showLyrics;
 }
@@ -175,13 +205,13 @@ void DrawCompactHeader(const HeaderContext& ctx) {
     if (ctx.haveArt) {
         dl->AddRectFilled(ImVec2(artDrawMin.x + Px(2.f), artDrawMin.y + Px(4.f)),
                           ImVec2(artDrawMax.x + Px(2.f), artDrawMax.y + Px(4.f)),
-                          IM_COL32(0, 0, 0, 88), Px(8.f));
+                          IM_COL32(0, 0, 0, 88), Px(11.f));
         dl->AddImageRounded(AlbumArtTexture(),
                             artDrawMin, artDrawMax, ImVec2(0, 0), ImVec2(1, 1),
-                            IM_COL32_WHITE, Px(8.f));
+                            IM_COL32_WHITE, Px(11.f));
         dl->AddRect(artDrawMin, artDrawMax,
                     IM_COL32(255, 255, 255, artHovered ? 78 : 34),
-                    Px(8.f), 0, 1.f);
+                    Px(11.f), 0, 1.f);
         if (artHovered) {
             dl->AddRectFilled(artDrawMin, artDrawMax,
                               IM_COL32(0, 0, 0, 58), Px(9.f));

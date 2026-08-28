@@ -443,7 +443,8 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
     float dt = std::min(ImGui::GetIO().DeltaTime, 0.05f);
     if (playing) s_motion += dt * 0.32f;
 
-    const float rounding = Px(fullScreen ? 16.f : 10.f);
+    // Matcha's card corners are noticeably rounder than ours were.
+    const float rounding = Px(fullScreen ? 20.f : 15.f);
     const bool compactSurface = !fullScreen && !showLyrics && !artworkView;
     dl->AddRectFilled(min, max, IM_COL32(4, 5, 8, 255), rounding);
 
@@ -546,13 +547,22 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
             // The alpha-ramped atmosphere copy carries the dissolve now, so the
             // flat darkening below it is only a whisper -- at the old strength
             // the two stacked and the bottom of every cover went muddy.
+            //
+            // Both of these MUST round their bottom corners to the card. Drawn
+            // square (plain AddImage / AddRectFilledMultiColor) they poked past
+            // the card's rounded corners, leaving the square nubs at the bottom
+            // that showed under the controls.
             if (ImTextureID fade = AlbumArtworkFadeTexture())
-                dl->AddImage(fade, artMin, artMax,
-                             ImVec2(0.f, 0.f), ImVec2(1.f, 1.f));
-            dl->AddRectFilledMultiColor(
-                ImVec2(artMin.x, fadeTop), artMax,
-                IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
-                IM_COL32(2, 3, 5, 12), IM_COL32(2, 3, 5, 12));
+                dl->AddImageRounded(fade, artMin, artMax,
+                             ImVec2(0.f, 0.f), ImVec2(1.f, 1.f),
+                             IM_COL32_WHITE, rounding - 1.f,
+                             ImDrawFlags_RoundCornersBottom);
+            // Flat low-alpha darkening with bottom-rounded corners, in place of
+            // the square multicolour gradient. At alpha 12 the loss of the
+            // vertical ramp is imperceptible, and the corners now match.
+            dl->AddRectFilled(ImVec2(artMin.x, fadeTop), artMax,
+                IM_COL32(2, 3, 5, 12), rounding - 1.f,
+                ImDrawFlags_RoundCornersBottom);
         }
     }
 

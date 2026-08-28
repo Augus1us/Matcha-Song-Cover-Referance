@@ -39,19 +39,57 @@ void DrawMediaGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
 // Shuffle and repeat have no filled equivalent there, so they stay as Lucide
 // geometry (https://lucide.dev, ISC) -- stroked, at a matching weight.
 //
-// kind: 0 = fullscreen, 1 = shuffle, 2 = repeat, 3 = lyrics.
-void DrawUtilityGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
+// kind: 0 = expand, 1 = shuffle, 2 = repeat, 3 = lyrics bubble, 4 = "Aa" bubble.
+void DrawUtilityGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col,
+                      ImFont* labelFont) {
     const float box = r * 2.35f;
     if (kind == 0) {
-        DrawSvgIcon(dl, icons::kFullscreenPath, c, box, icons::kFullscreenViewBox, col);
+        // Two opposed diagonal arrows, not the square bracket the fullscreen SVG
+        // draws. The reference's expand mark is a resize arrow pair: a head at
+        // the upper-left and one at the lower-right, each with a short tail, and
+        // no connecting shaft between them.
+        const float a = r * 0.74f, head = r * 0.50f;
+        const float w = std::max(1.25f, r * 0.23f);
+        const ImVec2 tl(c.x - a, c.y - a), br(c.x + a, c.y + a);
+        // Upper-left arrow: tail runs inward, head opens back out.
+        dl->AddLine(tl, ImVec2(tl.x + head * 1.15f, tl.y + head * 1.15f), col, w);
+        dl->AddLine(tl, ImVec2(tl.x + head, tl.y), col, w);
+        dl->AddLine(tl, ImVec2(tl.x, tl.y + head), col, w);
+        // Lower-right arrow, mirrored.
+        dl->AddLine(br, ImVec2(br.x - head * 1.15f, br.y - head * 1.15f), col, w);
+        dl->AddLine(br, ImVec2(br.x - head, br.y), col, w);
+        dl->AddLine(br, ImVec2(br.x, br.y - head), col, w);
         return;
     }
-    if (kind == 3) {
-        // The soft bubble is a stroked outline plus filled quote marks, so its
-        // two subpaths take different operations rather than both being filled.
-        StrokeSvgPath(dl, icons::kLyricsPath0, c, box, icons::kLyricsViewBox, col,
-                      std::max(1.15f, r * 0.17f));
-        DrawSvgIcon(dl, icons::kLyricsPath1, c, box, icons::kLyricsViewBox, col);
+    if (kind == 3 || kind == 4) {
+        // SOLID speech bubble with the label knocked out of it. The reference
+        // draws a filled white bubble with dark glyphs inside; we used to stroke
+        // the outline and fill the quote marks in the same colour, which reads
+        // as a hollow outline mark and is much lighter than their solid chip.
+        //
+        // The bubble is the icon's own outline path, filled instead of stroked,
+        // so the corner radii and the tail come from the artwork rather than
+        // from a rounded rect guessed to match it.
+        DrawSvgIcon(dl, icons::kLyricsPath0, c, box, icons::kLyricsViewBox, col);
+        // Glyphs are punched in the CARD's ink, not in white -- they are holes
+        // in the filled shape. Alpha tracks the bubble's so it dims as one.
+        const int alpha = (int)((col >> IM_COL32_A_SHIFT) & 0xFF);
+        const ImU32 ink = IM_COL32(52, 43, 48, alpha);
+        if (kind == 3) {
+            // The quote marks are a subpath of the same SVG, already positioned
+            // inside the bubble, so they land correctly at any size.
+            DrawSvgIcon(dl, icons::kLyricsPath1, c, box, icons::kLyricsViewBox, ink);
+        } else if (labelFont) {
+            // Body of the bubble spans y 4.75..16.25 of a 24 viewBox, so its
+            // centre sits slightly above the icon's, and the tail hangs below.
+            const float unit = box / icons::kLyricsViewBox;
+            const float bodyH = 11.5f * unit;
+            const float bodyCy = c.y + (10.5f - 12.f) * unit;
+            const float ls = bodyH * 0.66f;
+            const ImVec2 m = labelFont->CalcTextSizeA(ls, FLT_MAX, 0.f, "Aa");
+            dl->AddText(labelFont, ls,
+                        ImVec2(c.x - m.x * 0.5f, bodyCy - m.y * 0.5f), ink, "Aa");
+        }
         return;
     }
     const float k = std::max(2.4f, r * 0.92f) / 12.f;   // 24x24 grid
@@ -91,11 +129,19 @@ void DrawTransportControls(const TransportContext& ctx) {
     const bool showLyrics = *ctx.showLyrics;
     const float S = ctx.uiScale;
 
-    const float barY = fullScreen ? wp.y + ws.y - Px(103.f)
+    // In fullscreen the progress bar sits directly under the art + title block
+    // (which is vertically centred), instead of being pinned to the very bottom
+    // of the window -- that pinning is what left the huge empty middle on a
+    // truly fullscreen window. The gap below the art tracks the title size so it
+    // scales with the art.
+    const float fsTitle = std::clamp(ctx.fullArtSize * 0.072f, 17.f, 30.f);
+    const float barY = fullScreen
+        ? ctx.fullArtY + ctx.fullArtSize + fsTitle * 3.4f + 20.f
         : (compactMusic ? wp.y + ws.y - Px(63.f)
                         : (artworkView ? wp.y + ws.y - Px(78.f)
                                        : wp.y + ws.y - Px(59.f)));
-    const float barThickness = Px(fullScreen ? 2.5f : 4.f);
+    const float barThickness = fullScreen ? std::max(2.5f, ctx.fullArtSize * 0.012f)
+                                          : Px(4.f);
     const float leftInset = Px(compactMusic ? 16.f : (artworkView ? 7.f : 13.f));
     const float rightInset = Px(compactMusic ? 16.f : (artworkView ? 13.f : 8.f));
     ImVec2 barMin(fullScreen ? ctx.fullColumnX : wp.x + leftInset, barY),
@@ -124,13 +170,17 @@ void DrawTransportControls(const TransportContext& ctx) {
         timelineDragSeekSec = -1.0;
     }
     ImGui::PopID();
-    dl->AddRectFilled(barMin, barMax, IM_COL32(255, 255, 255, 76), 2.f);
+    // Fully pill-rounded track and fill (radius = half thickness), matching the
+    // reference's rounder bar.
+    const float barR = (barMax.y - barMin.y) * 0.5f;
+    dl->AddRectFilled(barMin, barMax, IM_COL32(255, 255, 255, 76), barR);
     dl->AddRectFilled(barMin, ImVec2(barMin.x + (barMax.x - barMin.x) * displayProgress, barMax.y),
-                      IM_COL32(244, 248, 252, 228), 2.f);
+                      IM_COL32(244, 248, 252, 228), barR);
     if (ctx.duration > 0.0) {
         const float thumbX = barMin.x + (barMax.x - barMin.x) * displayProgress;
         dl->AddCircleFilled(ImVec2(thumbX, barY + barThickness * 0.5f),
-                            (fullScreen ? 1.9f : (compactMusic ? 2.15f : 2.8f)) * S,
+                            fullScreen ? std::clamp(ctx.fullArtSize * 0.012f, 1.9f, 5.f)
+                                       : (compactMusic ? 2.15f : 2.8f) * S,
                             IM_COL32(255, 255, 255, 240), 18);
     }
 
@@ -141,7 +191,8 @@ void DrawTransportControls(const TransportContext& ctx) {
     fmt(displayPosition, pb, sizeof(pb));
     fmt(std::max(0.0, ctx.duration - displayPosition), remaining, sizeof(remaining));
     std::snprintf(rb, sizeof(rb), "-%s", remaining);
-    const float timeSize = (compactMusic ? 9.5f : (fullScreen ? 10.5f : 10.f)) * S;
+    const float timeSize = fullScreen ? std::clamp(ctx.fullArtSize * 0.035f, 10.5f, 17.f)
+                                      : (compactMusic ? 9.5f : 10.f) * S;
     const float timeY = barY + Px(6.f);
     music_host::DrawText(dl, ctx.regular, timeSize, ImVec2(barMin.x, timeY),
         IM_COL32(255, 255, 255, 136), pb);
@@ -149,13 +200,14 @@ void DrawTransportControls(const TransportContext& ctx) {
         ImVec2(barMax.x - music_host::Measure(ctx.regular, timeSize, rb).x, timeY),
         IM_COL32(255, 255, 255, 136), rb);
     const char* status = "Lossless";
-    const float statusTextSize = (compactMusic ? 10.f : (fullScreen ? 10.5f : 10.5f)) * S;
+    const float statusTextSize = fullScreen ? std::clamp(ctx.fullArtSize * 0.035f, 10.5f, 17.f)
+                                            : (compactMusic ? 10.f : 10.5f) * S;
     ImVec2 statusSize = music_host::Measure(ctx.bold, statusTextSize, status);
     music_host::DrawText(dl, ctx.bold, statusTextSize,
         ImVec2((barMin.x + barMax.x - statusSize.x) * 0.5f, timeY),
         IM_COL32(255, 255, 255, 172), status);
 
-    const float cy = fullScreen ? barY + Px(34.f)
+    const float cy = fullScreen ? barY + std::max(34.f, ctx.fullArtSize * 0.11f)
         : (compactMusic ? wp.y + ws.y - Px(23.f)
                         : (artworkView ? wp.y + ws.y - Px(31.f)
                                        : wp.y + ws.y - Px(20.f)));
@@ -171,8 +223,20 @@ void DrawTransportControls(const TransportContext& ctx) {
     const float wantSpacing = (compactMusic ? 37.f
         : (fullScreen ? 56.f : (artworkView ? 69.f : 35.f))) * S;
     const float controlSpacing = std::min(wantSpacing, usable * 0.5f * 0.62f);
-    const float primaryRadius = (compactMusic ? 12.f : (fullScreen ? 19.f : 15.f)) * S;
-    const float secondaryRadius = (compactMusic ? 9.5f : (fullScreen ? 15.5f : 13.f)) * S;
+    const float primaryRadius = fullScreen
+        ? std::clamp(ctx.fullArtSize * 0.072f, 19.f, 34.f)
+        : (compactMusic ? 13.5f : 17.f) * S;
+    const float secondaryRadius = fullScreen
+        ? std::clamp(ctx.fullArtSize * 0.058f, 15.5f, 27.f)
+        : (compactMusic ? 11.f : 14.5f) * S;
+    // Glyph half-extents. In fullscreen these scale with the button (which
+    // scales with the art); elsewhere they keep their tuned pixel sizes times
+    // the UI scale. Without this the fullscreen glyphs stayed ~7px inside a
+    // 26px button, because their size was tied to uiScale, which is 1 when the
+    // window itself is fullscreen.
+    const float playGlyph = fullScreen ? primaryRadius * 0.46f : 8.7f * S;
+    const float skipGlyph = fullScreen ? secondaryRadius * 0.58f
+                                       : (compactMusic ? 5.2f : 6.7f) * S;
     struct Ctl { float dx; int kind; } ctls[3] = {
         {-controlSpacing, 0}, {0, -1}, {controlSpacing, 3}
     };
@@ -184,28 +248,31 @@ void DrawTransportControls(const TransportContext& ctx) {
         ImGui::InvisibleButton("##mc", ImVec2(hitRadius * 2.f, hitRadius * 2.f));
         bool hov = ImGui::IsItemHovered();
         bool clk = ImGui::IsItemClicked();
-        float hv = music_host::animation::Anim(ImGui::GetID("##h"), hov);
+        float hv = music_host::animation::Anim(ImGui::GetID("##h"), hov, 20.f);
         float bnc = music_host::animation::ClickBounce(ImGui::GetID("##b"), clk);
+        float glow = music_host::animation::ClickGlow(ImGui::GetID("##g"), clk);
+        float press = music_host::animation::PressPulse(ImGui::GetID("##p"), clk);
         int kind = ctls[i].kind;
         if (kind == -1) kind = ctx.playing ? 2 : 1;
-        if (i == 1) {
-            // Plain white glyph in EVERY mode. The lyrics/expanded layout used
-            // to put play/pause inside a filled white disc -- that is Spotify's
-            // treatment, not Apple's, and it made the transport row read as a
-            // different app the moment the card was expanded.
-            if (hv > 0.01f)
-                dl->AddCircleFilled(ImVec2(bx, cy), primaryRadius,
-                                    IM_COL32(255, 255, 255, (int)(18 * hv)), 20);
-            DrawMediaGlyph(dl, ImVec2(bx, cy), 7.3f * S * bnc, kind,
-                           IM_COL32(255, 255, 255, (int)(225 + 30 * hv)));
-        } else {
-            if (hv > 0.01f)
-                dl->AddCircleFilled(ImVec2(bx, cy), secondaryRadius,
-                                    IM_COL32(255, 255, 255, (int)(22 * hv)), 20);
-            DrawMediaGlyph(dl, ImVec2(bx, cy),
-                           (compactMusic ? 4.2f : 5.5f) * S * bnc, kind,
-                           IM_COL32(255, 255, 255, (int)(185 + 55 * hv)));
+        const float radius = (i == 1) ? primaryRadius : secondaryRadius;
+        // Hover: a soft disc fades and grows in behind the glyph.
+        if (hv > 0.01f)
+            dl->AddCircleFilled(ImVec2(bx, cy), radius * (0.88f + 0.22f * hv),
+                                IM_COL32(255, 255, 255, (int)(12 + 40 * hv)), 24);
+        // Click: an expanding ring ripples out and fades.
+        if (glow >= 0.f) {
+            const float rr = radius * (0.85f + glow * 1.55f);
+            const float a = 120.f * (1.f - glow);
+            dl->AddCircle(ImVec2(bx, cy), rr, IM_COL32(255, 255, 255, (int)a),
+                          0, std::max(1.f, 2.4f * (1.f - glow)));
         }
+        // Glyph grows a touch on hover, springs on click, dips on the press.
+        const float baseGlyph = (i == 1) ? playGlyph : skipGlyph;
+        const float glyphSz = baseGlyph * bnc * (1.f + 0.08f * hv) * (1.f - 0.12f * press);
+        const int baseAlpha = (i == 1) ? 225 : 185;
+        const int hoverAdd  = (i == 1) ? 30 : 55;
+        DrawMediaGlyph(dl, ImVec2(bx, cy), glyphSz, kind,
+                       IM_COL32(255, 255, 255, (int)(baseAlpha + hoverAdd * hv)));
         if (clk) {
             if (i == 0)      media::RequestSkipPrevious();
             else if (i == 1) media::RequestTogglePlayPause();
@@ -217,22 +284,45 @@ void DrawTransportControls(const TransportContext& ctx) {
     auto utilityButton = [&](const char* id, const ImVec2& center, int icon,
                              bool selected) {
         ImGui::PushID(id);
-        const float hit = Px(10.f);
-        ImGui::SetCursorScreenPos(ImVec2(center.x - hit, center.y - hit));
-        ImGui::InvisibleButton("##utility", ImVec2(hit * 2.f, hit * 2.f));
+        // Hitbox matches the drawn size (bigger in fullscreen), so the clickable
+        // area is not a tiny 10px square under a large glyph.
+        const float utilHit = fullScreen
+            ? std::clamp(ctx.fullArtSize * 0.055f, 10.f, 20.f) : Px(11.f);
+        ImGui::SetCursorScreenPos(ImVec2(center.x - utilHit, center.y - utilHit));
+        ImGui::InvisibleButton("##utility", ImVec2(utilHit * 2.f, utilHit * 2.f));
         const bool hovered = ImGui::IsItemHovered();
         const bool clicked = ImGui::IsItemClicked();
-        const float press = music_host::animation::ClickBounce(
-            ImGui::GetID("##utility_press"), clicked);
-        if ((hovered || selected) && !(fullScreen && selected)) {
-            dl->AddCircleFilled(center, Px(10.f) * press,
-                                IM_COL32(255, 255, 255, selected ? 30 : 16), 16);
-        }
+        const float hv = music_host::animation::Anim(
+            ImGui::GetID("##uh"), hovered, 20.f);
+        const float bnc = music_host::animation::ClickBounce(
+            ImGui::GetID("##ub"), clicked);
+        const float glow = music_host::animation::ClickGlow(
+            ImGui::GetID("##ug"), clicked);
+        const float press = music_host::animation::PressPulse(
+            ImGui::GetID("##up"), clicked);
+        // The two bubble marks are solid chips in the reference; a disc behind
+        // them just muddies their edge, so only the stroked marks get one.
+        const bool bubble = (icon == 3 || icon == 4);
+        const float fill = std::max(hv, selected ? 1.f : 0.f);
+        if (fill > 0.01f && !bubble && !(fullScreen && selected))
+            dl->AddCircleFilled(center, utilHit * (0.82f + 0.2f * fill),
+                IM_COL32(255, 255, 255, (int)((selected ? 26 : 12) + 26 * hv)), 24);
+        // Click: expanding ring ripple.
+        if (glow >= 0.f)
+            dl->AddCircle(center, utilHit * (0.8f + glow * 1.5f),
+                IM_COL32(255, 255, 255, (int)(100.f * (1.f - glow))),
+                0, std::max(1.f, 2.f * (1.f - glow)));
+        const float utilGlyph = fullScreen
+            ? std::clamp(ctx.fullArtSize * 0.035f, 5.7f, 13.f)
+            : (compactMusic ? 6.4f : 7.4f) * S;
+        // A filled chip at 132 alpha reads as washed-out grey, where the
+        // reference's bubbles are near-solid white whether or not lyrics are on.
+        const int glyphAlpha = bubble
+            ? (selected ? 244 : (int)(206 + 40 * hv))
+            : (selected ? 232 : (int)(132 + 74 * hv));
         DrawUtilityGlyph(dl, center,
-                         (compactMusic ? 5.5f : (fullScreen ? 5.7f : 6.4f)) * S * press,
-                         icon,
-                         IM_COL32(255, 255, 255,
-                                  selected ? 226 : (hovered ? 196 : 132)));
+            utilGlyph * bnc * (1.f + 0.08f * hv) * (1.f - 0.12f * press), icon,
+            IM_COL32(255, 255, 255, glyphAlpha), ctx.bold);
         ImGui::PopID();
         return clicked;
     };
@@ -264,23 +354,38 @@ void DrawTransportControls(const TransportContext& ctx) {
     } else {
         fullScreenClicked = !fullScreen && utilityButton(
             "fullscreen_toggle", ImVec2(wp.x + edgeInset, cy), 0, false);
+        // In fullscreen these used to be pinned to the ends of the progress bar
+        // while prev/play/next stayed on their even step, so the row came out as
+        // 38/56/56/35 instead of one rhythm. The reference's five marks are
+        // evenly spaced, so shuffle and repeat take the same step as the rest.
         shuffleClicked = utilityButton(
             "shuffle_toggle",
-            ImVec2(fullScreen ? barMin.x + Px(3.f)
+            ImVec2(fullScreen ? shuffleX
                               : std::max(wp.x + edgeInset + Px(24.f), shuffleX), cy),
             1, ctx.shuffleActive);
+        // Repeat is pulled further in than before: the right end of the row now
+        // carries TWO bubbles rather than one, and at the old clamp repeat sat
+        // exactly where the "Aa" chip goes.
         repeatClicked = utilityButton(
             "repeat_toggle",
-            ImVec2(fullScreen ? barMax.x - Px(7.f)
-                              : std::min(wp.x + ws.x - edgeInset - Px(24.f), repeatX), cy),
+            ImVec2(fullScreen ? repeatX
+                              : std::min(wp.x + ws.x - edgeInset - Px(46.f), repeatX), cy),
             2, ctx.repeatActive);
+        // The reference pairs the lyrics bubble with an "Aa" bubble: bottom
+        // right of the panel row (Aa then quote), bottom left in fullscreen
+        // (quote then Aa). Extra clearance from the right edge keeps the quote
+        // off the resize grip in the corner.
+        const float bubbleGap = fullScreen
+            ? std::clamp(ctx.fullArtSize * 0.09f, 22.f, 46.f) : Px(22.f);
+        const float quoteX = fullScreen ? wp.x + Px(16.f)
+                                        : wp.x + ws.x - edgeInset - Px(3.f);
+        const float bubbleY = fullScreen ? wp.y + ws.y - Px(20.f) : cy;
+        const float aaX = fullScreen ? quoteX + bubbleGap : quoteX - bubbleGap;
+        if (utilityButton("lyric_scale_toggle", ImVec2(aaX, bubbleY), 4,
+                          LyricsScaledUp()))
+            ToggleLyricsScale();
         lyricsClicked = utilityButton(
-            "lyrics_toggle",
-            // Extra clearance from the right edge so the button does not sit on
-            // top of the resize grip in the corner.
-            ImVec2(fullScreen ? wp.x + Px(14.f)
-                              : wp.x + ws.x - edgeInset - Px(5.f),
-                   fullScreen ? wp.y + ws.y - Px(20.f) : cy), 3, showLyrics);
+            "lyrics_toggle", ImVec2(quoteX, bubbleY), 3, showLyrics);
     }
 
     if (fullScreenClicked) {

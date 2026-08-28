@@ -17,11 +17,23 @@ float SpringF(ImGuiID id, float target, float speed = 18.0f,
               float damping = 1.0f);
 void SetSpring(ImGuiID id, float value);
 float ClickBounce(ImGuiID id, bool triggered);
+// Radial click ripple. Returns progress 0..1 over the ripple's lifetime after a
+// click, or -1 while idle. Draw an expanding, fading ring/disc from it.
+float ClickGlow(ImGuiID id, bool triggered);
+// Eased press depression 0..1 (1 at the moment of press, decaying) for a subtle
+// "push in" on click, separate from the springy ClickBounce.
+float PressPulse(ImGuiID id, bool triggered);
 }
 
 namespace overlay {
 HWND GetOverlayWindow();
 void* GetD3DDevice();
+// Toggle the host window between windowed and true (borderless) fullscreen --
+// the whole window fills the monitor with no title bar. The player's fullscreen
+// LAYOUT (the wide art+lyrics card) is a separate thing; this is the OS window
+// itself. A host with no ownable window (e.g. a shared overlay) may no-op.
+void ToggleFullscreenWindow();
+bool IsFullscreenWindow();
 ImFont* GetFont(int index);
 ImFont* GetMusicRegularFont();
 ImFont* GetMusicBoldFont();

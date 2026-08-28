@@ -51,10 +51,18 @@ void StrokeSvgPath(ImDrawList* drawList, const char* pathData, ImVec2 center,
 
 void DrawMediaGlyph(ImDrawList* drawList, ImVec2 center, float radius,
                     int kind, ImU32 color);
+// kind: 0 = expand, 1 = shuffle, 2 = repeat, 3 = lyrics bubble, 4 = "Aa" bubble.
+// The two bubble marks letter themselves, so they need a font; every other kind
+// ignores it and may be passed nullptr.
 void DrawUtilityGlyph(ImDrawList* drawList, ImVec2 center, float radius,
-                      int kind, ImU32 color);
+                      int kind, ImU32 color, ImFont* labelFont = nullptr);
 
 void UpdateLyrics(const media::NowPlaying& nowPlaying);
+
+// The "Aa" bubble beside the lyrics bubble steps the lyric type up a size, the
+// way the same mark does in Apple Music. State lives with the lyrics panel.
+bool LyricsScaledUp();
+void ToggleLyricsScale();
 
 struct PlaybackView {
     double position = 0.0;
@@ -70,7 +78,7 @@ void DrawArtworkLyricOverlay(ImDrawList* drawList, ImFont* regular,
                              ImFont* bold, ImVec2 windowPosition,
                              ImVec2 windowSize, const char* title,
                              const char* artist, const char* album,
-                             int activeLyric);
+                             int activeLyric, bool lyricsLoading);
 
 struct LyricsPanelContext {
     float uiScale = 1.0f;
@@ -81,6 +89,10 @@ struct LyricsPanelContext {
     ImVec2 windowSize{};
     float fullLyricsX = 0.0f;
     float fullLyricsWidth = 0.0f;
+    // Fullscreen artwork block, so the lyric column can be aligned to the cover
+    // instead of to the card's top edge.
+    float fullArtY = 0.0f;
+    float fullArtSize = 0.0f;
     double position = 0.0;
     double duration = 0.0;
     int activeLyric = -1;
@@ -101,6 +113,8 @@ struct TransportContext {
     ImVec2 windowSize{};
     float fullColumnX = 0.0f;
     float fullColumnWidth = 0.0f;
+    float fullArtY = 0.0f;
+    float fullArtSize = 0.0f;
     double position = 0.0;
     double duration = 0.0;
     float progress = 0.0f;
@@ -133,6 +147,7 @@ struct HeaderContext {
     float fullColumnX = 0.0f;
     float fullColumnWidth = 0.0f;
     float fullArtX = 0.0f;
+    float fullArtY = 0.0f;
     float fullArtSize = 0.0f;
     bool* artworkView = nullptr;
     bool* showLyrics = nullptr;

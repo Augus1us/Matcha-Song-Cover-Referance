@@ -239,12 +239,75 @@ float ClickBounce(ImGuiID id, bool triggered) {
     return 1.0f - amplitude * std::cos(9.0f * progress);
 }
 
+float ClickGlow(ImGuiID id, bool triggered) {
+    static std::unordered_map<ImGuiID, float> elapsed;
+    auto [entry, inserted] = elapsed.try_emplace(id, -1.0f);
+    if (triggered) entry->second = 0.0f;
+    if (entry->second < 0.0f) return -1.0f;
+    float delta = std::clamp(ImGui::GetIO().DeltaTime, 0.0f, 0.1f);
+    if (delta <= 0.0f) delta = 1.0f / 60.0f;
+    entry->second += delta;
+    constexpr float duration = 0.42f;
+    if (entry->second >= duration) { entry->second = -1.0f; return -1.0f; }
+    return entry->second / duration;
+}
+
+float PressPulse(ImGuiID id, bool triggered) {
+    static std::unordered_map<ImGuiID, float> elapsed;
+    auto [entry, inserted] = elapsed.try_emplace(id, -1.0f);
+    if (triggered) entry->second = 0.0f;
+    if (entry->second < 0.0f) return 0.0f;
+    float delta = std::clamp(ImGui::GetIO().DeltaTime, 0.0f, 0.1f);
+    if (delta <= 0.0f) delta = 1.0f / 60.0f;
+    entry->second += delta;
+    constexpr float duration = 0.22f;
+    if (entry->second >= duration) { entry->second = -1.0f; return 0.0f; }
+    const float p = entry->second / duration;
+    return (1.0f - p) * (1.0f - p);   // quick attack, ease-out decay
+}
+
 } // namespace animation
 
 namespace overlay {
 
 HWND GetOverlayWindow() { return g_window; }
 void* GetD3DDevice() { return preview::Device(); }
+
+// Borderless fullscreen: drop the frame and stretch the window over the whole
+// monitor, remembering the previous placement and style so it restores exactly.
+// This is the standard Raymond-Chen toggle rather than SW_MAXIMIZE, which keeps
+// the title bar and only fills the work area.
+static bool g_windowFullscreen = false;
+static WINDOWPLACEMENT g_prevPlacement = { sizeof(WINDOWPLACEMENT) };
+static LONG_PTR g_prevStyle = 0;
+
+void ToggleFullscreenWindow() {
+    HWND h = g_window;
+    if (!h) return;
+    if (!g_windowFullscreen) {
+        g_prevStyle = GetWindowLongPtr(h, GWL_STYLE);
+        GetWindowPlacement(h, &g_prevPlacement);
+        MONITORINFO mi = { sizeof(mi) };
+        GetMonitorInfo(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), &mi);
+        SetWindowLongPtr(h, GWL_STYLE,
+            g_prevStyle & ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX |
+                            WS_MAXIMIZEBOX | WS_SYSMENU));
+        SetWindowPos(h, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top,
+            mi.rcMonitor.right - mi.rcMonitor.left,
+            mi.rcMonitor.bottom - mi.rcMonitor.top,
+            SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+        g_windowFullscreen = true;
+    } else {
+        SetWindowLongPtr(h, GWL_STYLE, g_prevStyle);
+        SetWindowPlacement(h, &g_prevPlacement);
+        SetWindowPos(h, nullptr, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+            SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+        g_windowFullscreen = false;
+    }
+}
+
+bool IsFullscreenWindow() { return g_windowFullscreen; }
 ImFont* GetFont(int index) {
     if (index == 0) return g_regular;
     if (index == 1) return g_bold;

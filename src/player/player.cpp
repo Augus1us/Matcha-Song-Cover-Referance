@@ -20,6 +20,7 @@ ImVec2 g_cardMax{0, 0};
 struct WindowState {
     bool initialized = false;
     bool wasFullScreen = false;
+    bool wasWindowFull = false;   // OS window was borderless-fullscreen last frame
     bool restoreNormalPosition = false;
     int  previousMode = -1;
     ImVec2 lastSize{304.f, 141.f};
@@ -102,11 +103,17 @@ ImVec2 DesiredSize(const ImGuiViewport* vp, bool fullScreen, bool artworkView,
     constexpr float kExpandedHeight = 484.f;
     constexpr float kArtworkWidth = 293.f;
     constexpr float kArtworkHeight = 303.f;
-    const float fullWidth = std::min(806.f,
-        std::max(360.f, vp->WorkSize.x - 36.f));
-    const float fullHeight = std::min(520.f,
-        std::max(400.f, fullWidth * 0.509f));
-    outFull = ImVec2(fullWidth, fullHeight);
+    // When the host window itself is fullscreen, the card fills it edge to edge;
+    // otherwise the fullscreen LAYOUT is a bounded, centred card.
+    if (music_host::overlay::IsFullscreenWindow()) {
+        outFull = vp->WorkSize;
+    } else {
+        const float fullWidth = std::min(806.f,
+            std::max(360.f, vp->WorkSize.x - 36.f));
+        const float fullHeight = std::min(520.f,
+            std::max(400.f, fullWidth * 0.509f));
+        outFull = ImVec2(fullWidth, fullHeight);
+    }
     if (fullScreen) return outFull;
     if (artworkView) return ImVec2(kArtworkWidth, kArtworkHeight);
     if (expanded) return ImVec2(kExpandedWidth, kExpandedHeight);
@@ -159,9 +166,13 @@ void DrawMusicPlayer() {
 
     const bool firstFrame = !st.initialized;
     const bool modeChanged = st.previousMode >= 0 && st.previousMode != mode;
+    // A window-fullscreen card fills the monitor exactly; the user-scale slider
+    // does not apply to it.
+    const bool windowFull = music_host::overlay::IsFullscreenWindow();
     const float maxUserScale = compactMode ? kMaxUserScaleCompact
                                            : kMaxUserScaleExpanded;
-    st.userScale = std::clamp(st.userScale, kMinUserScale, maxUserScale);
+    st.userScale = windowFull ? 1.f
+                              : std::clamp(st.userScale, kMinUserScale, maxUserScale);
     // Everything below sizes against the user-s scale, not the raw base.
     const ImVec2 scaledDesired(desiredSize.x * st.userScale,
                                desiredSize.y * st.userScale);
@@ -190,7 +201,9 @@ void DrawMusicPlayer() {
     const ImVec2 requestedSize = st.modeTransition ? st.animatedSize : scaledDesired;
     if (firstFrame || modeChanged || st.modeTransition || fullScreen)
         ImGui::SetNextWindowSize(requestedSize, ImGuiCond_Always);
-    if (!fullScreen && !st.modeTransition) {
+    // No resize handle while the window fills the monitor: the card is locked to
+    // the window, so the aspect-lock constraint would just fight the OS size.
+    if (!fullScreen && !st.modeTransition && !windowFull) {
         // Same rule in every mode. Artwork and lyrics modes used to be free-form
         // between a min and a max, so they could be dragged into shapes the
         // layout does not support; now they scale exactly like the compact card.
@@ -206,7 +219,11 @@ void DrawMusicPlayer() {
             ApplyUniformScale, &g_aspectLock);
     }
     if (fullScreen) {
-        if (firstFrame || modeChanged) {
+        if (windowFull) {
+            // Card pinned to the window's top-left, filling it every frame; no
+            // remembered position, no drag.
+            ImGui::SetNextWindowPos(vp->WorkPos, ImGuiCond_Always);
+        } else if (firstFrame || modeChanged || st.wasWindowFull) {
             const ImVec2 centered(
                 vp->WorkPos.x + (vp->WorkSize.x - requestedSize.x) * 0.5f,
                 vp->WorkPos.y + (vp->WorkSize.y - requestedSize.y) * 0.5f);
@@ -227,9 +244,31 @@ void DrawMusicPlayer() {
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
         ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
         ImGuiWindowFlags_NoMove;
-    if (fullScreen || st.modeTransition)
+    if (fullScreen || st.modeTransition || windowFull)
         flags |= ImGuiWindowFlags_NoResize;
+    // Resize ONLY from the bottom-right grip -- not the edges or the other
+    // corners. ImGui resizes from edges when ConfigWindowsResizeFromEdges is on
+    // (the default), which let the card be dragged from any side and briefly
+    // stretched off its aspect line before the constraint re-projected it -- the
+    // distortion that also shoved the lyrics into each other mid-drag. The flag
+    // is read inside Begin (that is where the manual resize runs), so it is
+    // scoped to this one window and restored immediately, leaving any other
+    // window in the host untouched.
+    ImGuiIO& io = ImGui::GetIO();
+    const bool prevResizeEdges = io.ConfigWindowsResizeFromEdges;
+    io.ConfigWindowsResizeFromEdges = false;
+    // Hide ImGui's own resize grip. It renders a filled blue wedge in the
+    // bottom-right corner (the dark theme's 0.26/0.59/0.98 accent), which is not
+    // a Matcha element and sat on top of the two thin corner strokes we draw
+    // ourselves further down. Zeroing the colour keeps the grip's hit box and
+    // drag behaviour -- only the wedge stops being painted. Pushed around Begin
+    // because that is where the grip is both colour-resolved and rendered.
+    ImGui::PushStyleColor(ImGuiCol_ResizeGrip, ImVec4(0.f, 0.f, 0.f, 0.f));
+    ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, ImVec4(0.f, 0.f, 0.f, 0.f));
+    ImGui::PushStyleColor(ImGuiCol_ResizeGripActive, ImVec4(0.f, 0.f, 0.f, 0.f));
     ImGui::Begin("##spotify_player", nullptr, flags);
+    ImGui::PopStyleColor(3);
+    io.ConfigWindowsResizeFromEdges = prevResizeEdges;
     st.initialized = true;
 
     ImVec2 wp = ImGui::GetWindowPos();
@@ -246,6 +285,7 @@ void DrawMusicPlayer() {
                           std::abs(ws.y - st.lastSize.y) > 0.5f;
     st.lastSize = ws;
     st.previousMode = mode;
+    st.wasWindowFull = windowFull;
 
     // Only keep the card on screen when it is NOT being resized. This clamp ran
     // every frame, so growing the card near a screen edge pushed its position
@@ -348,13 +388,29 @@ void DrawMusicPlayer() {
         return;
     }
 
-    const float fullColumnX = wp.x + ws.x * 0.092f + 1.f;
-    const float fullColumnWidth = 195.f;
-    const float fullArtSize = std::clamp(ws.y * 0.378f, 136.f, 158.f);
-    const float fullArtX = fullColumnX + (fullColumnWidth - fullArtSize) * 0.5f + 2.f;
-    const float fullLyricsX = wp.x + ws.x * 0.50f + 2.f;
-    const float fullLyricsWidth = std::min(300.f,
-        std::max(180.f, wp.x + ws.x - 68.f - fullLyricsX));
+    // Fullscreen layout scales with the window instead of sitting tiny in the
+    // corners. The old caps (art 158, column 195, lyrics 300) were sized for the
+    // bounded ~806-wide card, so on a truly fullscreen window everything hugged
+    // the edges and left a huge empty middle. The reference instead makes the
+    // art large, the left column a vertically-centred block (art, title,
+    // progress, controls), and the lyrics fill the right half in big type.
+    // The reference's fullscreen cover is a good deal larger than a third of the
+    // height -- it runs to roughly 40% and dominates the left column, where ours
+    // read as a thumbnail floating in empty space.
+    const float fullArtSize = std::clamp(ws.y * 0.405f, 150.f, 560.f);
+    const float fullColumnWidth = std::max(195.f, fullArtSize + 24.f);
+    // The reference insets its whole left column about a tenth of the width;
+    // at 5.5% ours hugged the card edge with the title nearly touching it.
+    const float fullColumnX = wp.x + std::max(ws.x * 0.10f, 40.f);
+    const float fullArtX = fullColumnX + (fullColumnWidth - fullArtSize) * 0.5f;
+    // The left block is art + info (~66) + progress (~44) + controls (~62); centre
+    // it vertically, but never let it ride above a small top margin.
+    const float fullBlockHeight = fullArtSize + 172.f;
+    const float fullArtY = wp.y + std::max(ws.y * 0.05f,
+                                           (ws.y - fullBlockHeight) * 0.5f);
+    const float fullLyricsX = wp.x + ws.x * 0.52f;
+    const float fullLyricsWidth = std::max(240.f,
+        wp.x + ws.x - std::max(ws.x * 0.05f, 40.f) - fullLyricsX);
 
     detail::HeaderContext hctx{};
     hctx.uiScale = g_uiScale;
@@ -373,6 +429,7 @@ void DrawMusicPlayer() {
     hctx.fullColumnWidth = fullColumnWidth;
     hctx.fullArtX = fullArtX;
     hctx.fullArtSize = fullArtSize;
+    hctx.fullArtY = fullArtY;
     hctx.artworkView = &artworkView;
     hctx.showLyrics = &showLyrics;
     hctx.fullScreenOut = &fullScreen;
@@ -385,7 +442,8 @@ void DrawMusicPlayer() {
     if (artworkView && haveArt) {
         detail::DrawArtworkLyricOverlay(dl, regular, bold, wp, ws,
                                         title, artist, album,
-                                        showLyrics ? view.activeLyric : -1);
+                                        showLyrics ? view.activeLyric : -1,
+                                        showLyrics && lyricsLoading);
     }
 
     if (showLyrics && !artworkView && ws.y > 245.f) {
@@ -398,6 +456,8 @@ void DrawMusicPlayer() {
         lctx.windowSize = ws;
         lctx.fullLyricsX = fullLyricsX;
         lctx.fullLyricsWidth = fullLyricsWidth;
+        lctx.fullArtY = fullArtY;
+        lctx.fullArtSize = fullArtSize;
         lctx.position = view.position;
         lctx.duration = durSec;
         lctx.activeLyric = view.activeLyric;
@@ -417,6 +477,8 @@ void DrawMusicPlayer() {
     tctx.windowSize = ws;
     tctx.fullColumnX = fullColumnX;
     tctx.fullColumnWidth = fullColumnWidth;
+    tctx.fullArtY = fullArtY;
+    tctx.fullArtSize = fullArtSize;
     tctx.position = view.position;
     tctx.duration = durSec;
     tctx.progress = view.progress;
