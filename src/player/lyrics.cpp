@@ -24,11 +24,6 @@ float    g_layoutWidth = -1.f;
 float    g_layoutTypeScale = -1.f;
 float    g_contentHeight = 0.f;
 
-// ImGui advances by exactly one font size between wrapped lines and adds no
-// leading, so a lyric that wraps is packed tight against itself while the gap
-// to the NEXT lyric stays wide. That mismatch is what makes wrapped lyrics look
-// cramped. Wrapping is done by hand here so every line -- wrapped or not --
-// uses the same rhythm.
 constexpr float kLyricLeading = 1.34f;
 
 int LyricWrapLineCount(ImFont* font, float size, const char* text, float wrapWidth) {
@@ -46,26 +41,12 @@ int LyricWrapLineCount(ImFont* font, float size, const char* text, float wrapWid
     return std::max(1, lines);
 }
 
-// Defocus for one run of text.
-//
-// The reference genuinely BLURS lyrics as they get further from the current
-// line -- it is a depth-of-field falloff, not just a drop in opacity, and it is
-// the most recognisable thing about their lyric column. ImGui offers no shader
-// hook for text and an offscreen pass per line would cost a render target plus
-// a resolve every frame, so the run is stamped repeatedly around a small disc.
-//
-// Alpha is solved back from the wanted total rather than divided: N stacked
-// layers at `p` cover 1-(1-p)^N where they all overlap, so the per-tap alpha is
-// the inverse of that. Without it a blurred line comes out far fainter than an
-// unblurred one and the falloff reads as fading, which is what we already had.
 void AddTextBlurred(ImDrawList* dl, ImFont* font, float size, ImVec2 pos,
                     ImU32 col, const char* begin, const char* end, float blur) {
     if (blur < 0.35f) {
         dl->AddText(font, size, pos, col, begin, end);
         return;
     }
-    // Centre, an outer hex and an inner hex. Fewer taps than this and Cyrillic
-    // stems ghost into separate copies instead of smearing together.
     static const float kTap[13][2] = {
         { 0.00f,  0.00f},
         { 1.00f,  0.00f}, { 0.50f,  0.87f}, {-0.50f,  0.87f},
@@ -175,19 +156,12 @@ void DrawArtworkLyricOverlay(ImDrawList* dl, ImFont* regular, ImFont* bold,
                              ImVec2 wp, ImVec2 ws, const char* title,
                              const char* artist, const char* album,
                              int activeLyric, bool lyricsLoading) {
-    // The cover fills the whole card now (cover-fit, not a square sized by the
-    // width), so the overlay clips to the card rather than to where a square
-    // cover used to stop -- that old bound cut the bottom off the text.
     const float artBottom = wp.y + ws.y - 1.f;
     const float textX = wp.x + Px(8.f);
     const float textWidth = ws.x - Px(14.f);
     dl->PushClipRect(ImVec2(wp.x + 1.f, wp.y + 1.f),
                      ImVec2(wp.x + ws.x - 1.f, artBottom), true);
 
-    // Every offset below is Px()-scaled. They used to be raw pixels while the
-    // transport rail underneath is Px()-scaled, so enlarging the card walked the
-    // rail UP through this block at ~1px per 3% of scale until the active lyric
-    // sat on the progress bar -- the overlap seen when resizing artwork view.
     const float titleSize = Px(19.f);
     const float bylineSize = Px(14.6f);
     const float lyricSize = Px(18.f);
@@ -196,9 +170,6 @@ void DrawArtworkLyricOverlay(ImDrawList* dl, ImFont* regular, ImFont* bold,
     std::string artByline = artist ? artist : "";
     if (album && album[0]) {
         {
-            // Same spaced em dash as the compact header, by byte value:
-            // escapes in these files have been collapsed in editing before,
-            // and the two layouts had drifted to different spacing.
             static const char kDash[] = { 32, 32, (char)0xE2, (char)0x80,
                                           (char)0x94, 32, 32, 0 };
             if (!artByline.empty()) artByline += kDash;
@@ -207,16 +178,9 @@ void DrawArtworkLyricOverlay(ImDrawList* dl, ImFont* regular, ImFont* bold,
     }
     artByline = Ellipsize(artByline, bold, bylineSize, textWidth);
 
-    // Anchored to the transport rail rather than to a magic constant, so the two
-    // can never drift apart again: Px(94) is where the rail's hit box starts
-    // (controls.cpp puts the artwork bar at ws.y - Px(78) and grabs Px(6) above
-    // it), leaving a Px(10) breathing gap.
     const float railY = wp.y + ws.y - Px(94.f);
     const bool hasLyric = activeLyric >= 0 && activeLyric < (int)g_cache.size();
 
-    // Bottom-anchored on the measured, WRAPPED height: a lyric long enough to
-    // take two lines now grows upward over the artwork instead of spilling the
-    // second line down across the progress bar.
     const float lyricH = hasLyric
         ? bold->CalcTextSizeA(lyricSize, FLT_MAX, textWidth,
                               g_cache[activeLyric].text.c_str()).y
@@ -234,14 +198,6 @@ void DrawArtworkLyricOverlay(ImDrawList* dl, ImFont* regular, ImFont* bold,
         dl->AddText(bold, bylineSize, ImVec2(textX, titleY + Px(24.f)),
                     IM_COL32(255, 255, 255, 190), artByline.c_str());
     }
-    // Page dots -- three marks with the first one filled, always present.
-    //
-    // These were briefly gated on the lyrics fetch, on the reading that they
-    // were a loading spinner. The reference disproves it: the dots are there in
-    // the panel, the artwork view AND fullscreen, all with lyrics already
-    // rendering. They are a pager, so they stay put. While a fetch IS in flight
-    // the filled one runs along the row, which gives the loading feedback
-    // without inventing a mark the reference does not have.
     {
         const float dotR = std::max(1.6f, Px(2.4f)), step = dotR * 4.2f;
         const float dotY = titleY + (artByline.empty() ? Px(26.f) : Px(44.f));
@@ -290,10 +246,6 @@ static void DrawSyncButton(const LyricsPanelContext& ctx, float bottomY) {
     ImVec2 syncDrawMin(syncPos.x + syncInset, syncPos.y + syncInset * 0.5f);
     ImVec2 syncDrawMax(syncPos.x + syncSize.x - syncInset,
                        syncPos.y + syncSize.y - syncInset * 0.5f);
-    // A DARK chip, not a translucent white one. The reference's pill is a solid
-    // near-black lozenge with white text -- it has to stay legible sitting on
-    // top of the lyrics, and a 24-alpha white wash disappeared against a light
-    // artwork surface.
     const float syncRound = (syncDrawMax.y - syncDrawMin.y) * 0.5f;
     music_host::DrawShadow(dl, syncDrawMin, syncDrawMax, syncRound, 8, 9.f, 0.34f);
     dl->AddRectFilled(syncDrawMin, syncDrawMax,
@@ -322,41 +274,15 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
 
     const bool lyricsChanged = g_layoutRevision != g_cacheRevision;
     const float S = ctx.uiScale;
-    // Fullscreen started the column at 5.5% of the card height, which put the
-    // first lyric on top of the page dots -- both wanted the same few pixels.
-    // Starting lower clears them and matches where the reference begins its
-    // lyrics relative to the artwork.
-    // Fullscreen: the column is aligned to the COVER, not to the card's top
-    // edge. Anchored to the card it started above the artwork entirely and the
-    // whole right half sat high; the reference lines its first lyric up with the
-    // upper third of the cover (~0.41 of the art's height below its top), with
-    // the page dots a little above that.
     float lyricsTop = ctx.fullScreen
         ? (ctx.fullArtSize > 1.f ? ctx.fullArtY + ctx.fullArtSize * 0.41f
                                  : wp.y + ws.y * 0.135f)
         : wp.y + Px(82.f);
-    // 112 used to reserve a strip for the Sync pill and its dots. That control
-    // is gone, but the reservation stayed, leaving a tall empty band between
-    // the last lyric and the progress bar. The panel now runs down to just
-    // above the bar.
     float lyricsBottom = ctx.fullScreen ? wp.y + ws.y - Px(52.f)
                                         : wp.y + ws.y - Px(76.f);
     float lyricsHeight = std::max(Px(80.f), lyricsBottom - lyricsTop);
     float lyricX = ctx.fullScreen ? ctx.fullLyricsX : wp.x + Px(17.f);
     float lyricWidth = ctx.fullScreen ? ctx.fullLyricsWidth : ws.x - Px(39.f);
-    // Text tracks the card: the compact sizes were derived from ws.x already,
-    // but were clamped to a fixed pixel band so they stopped growing well before
-    // the card did.
-    // The reference sets its lyrics noticeably larger relative to the card:
-    // roughly 5% of the card width against the ~3.2% these worked out to, which
-    // is most of why ours read as small and cramped beside it.
-    // Fullscreen lyrics scale with the window: the reference sets them large
-    // (~2% of the width), where a fixed 25/31 looked tiny on a truly fullscreen
-    // window. Clamped so a small fullscreen card still reads.
-    // The "Aa" bubble steps the whole column up one notch, the way that mark
-    // does in Apple Music. It multiplies both sizes so the active/inactive
-    // relationship, the wrap count and the reserved line heights all stay in
-    // step -- they are all derived from these two numbers.
     const float typeScale = g_lyricsScaledUp ? 1.22f : 1.f;
     float inactiveSize = typeScale * (ctx.fullScreen
         ? std::clamp(ws.x * 0.019f, 25.f, 46.f)
@@ -384,10 +310,6 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
     } else {
         const int active = ctx.activeLyric;
 
-        // Type scale is part of the layout input: stepping the "Aa" bubble
-        // changes every reserved line height and wrap count, but not the column
-        // width, so without this the sizes changed while the heights kept the
-        // old rhythm and lines drew over each other.
         bool layoutChanged = lyricsChanged ||
             std::abs(g_layoutWidth - lyricWidth) > 1.f ||
             std::abs(g_layoutTypeScale - typeScale) > 0.001f ||
@@ -397,29 +319,9 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
             g_lineHeights.resize(g_cache.size());
             g_contentHeight = 0.f;
             g_layoutWidth = lyricWidth;
-            // Reserve at the ACTIVE size, not the inactive one.
-            //
-            // Heights used to be measured with the inactive size while the
-            // current line draws at activeSize in bold -- larger, and wide
-            // enough to wrap onto MORE lines than were counted. A wrapped
-            // active line then ran straight over the lyric beneath it. Every
-            // line can become the active one, so every line reserves the room
-            // that would need. It also matches the reference, whose lyrics sit
-            // noticeably further apart than ours did.
             for (int i = 0; i < (int)g_cache.size(); ++i) {
-                // Count wraps at the ACTIVE size but reserve height at the
-                // inactive one. Counting at the active size stops a line from
-                // silently wrapping onto an extra row once it becomes current
-                // (which is what ran the active lyric over the one below it),
-                // while reserving at the active size for all lines -- the first
-                // attempt here -- left every inactive line floating in far more
-                // space than the reference gives them. The inter-lyric gap
-                // absorbs the difference for whichever line is current.
                 const int wrapped = LyricWrapLineCount(
                     ctx.bold, activeSize, g_cache[i].text.c_str(), lyricWidth);
-                // Gap tuned to the reference's measured rhythm: it runs 33px
-                // per line in a 496px card (0.0665) where ours ran 36 in 483
-                // (0.0745) -- about 12% looser.
                 g_lineHeights[i] = wrapped * inactiveSize * kLyricLeading +
                     Px(ctx.fullScreen ? 17.f : 11.f);
                 g_contentHeight += g_lineHeights[i];
@@ -431,19 +333,11 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
             activeOffset += g_lineHeights[i];
 
         const float manualScrollMax = 0.f;
-        // Scroll far enough that the LAST line can still reach the top, instead
-        // of stopping when the content's bottom meets the panel's. With the
-        // active line anchored to the top, the old limit stranded the closing
-        // lines in the middle of the panel and the follow visibly gave up.
         const float tailLine = g_lineHeights.empty() ? 0.f : g_lineHeights.back();
         const float manualScrollMin =
             std::min(0.f, -std::max(0.f, g_contentHeight - tailLine));
         float followTarget = 0.f;
         if (ctx.lyricsSynced && active >= 0) {
-            // Top-anchored, not centred. The reference parks the current line at
-            // the TOP of the column with everything upcoming below it fading and
-            // blurring away; we were centring it, which showed a stack of
-            // already-sung lines above the current one that they never show.
             followTarget = -activeOffset;
         }
 
@@ -539,14 +433,6 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                     g_syncPulseUntilMs = GetTickCount64() + 650;
                 }
 
-                // These were tuned against a near-black card. The surface now
-                // follows the artwork and can be genuinely light, where
-                // low-alpha white simply disappears -- so the floors are
-                // raised. The falloff shape is unchanged; only the range moves.
-                // Blur now carries most of the depth cue, so the opacity ramp is
-                // shallower than it was: the reference's far lines are heavily
-                // defocused but still clearly white, where stacking a steep
-                // alpha falloff on top of the blur washed them out to nothing.
                 float distanceAlpha = ctx.fullScreen
                     ? (distance == 0 ? 0.86f :
                        distance == 1 ? 0.72f :
@@ -555,12 +441,6 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                 float alpha = distanceAlpha + (1.f - distanceAlpha) * focus;
                 alpha = std::min(1.f, alpha + hover * 0.18f);
                 float size = inactiveSize + (activeSize - inactiveSize) * focus;
-                // Every lyric is set in the SAME weight, the way the reference
-                // does -- the current line is distinguished by size and opacity,
-                // not by switching typeface. Alternating regular and bold meant
-                // the line changed shape as it became current, and needed a
-                // cross-fade to hide the jump; using one weight removes both the
-                // jump and the workaround.
                 ImFont* font = ctx.bold;
                 const bool crossFading = false;
                 const float weightBlend = 1.f;
@@ -576,36 +456,14 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                                y + g_lineHeights[i] - 5.f),
                         IM_COL32(255, 255, 255, (int)(14.f * hover)), 7.f);
                 }
-                // Depth-of-field falloff. This used to be an additive HALO: a
-                // dozen faint white copies drawn UNDER a fully sharp pass, which
-                // gives a glow, not a defocus -- the sharp glyphs still read
-                // crisply through it. The blur has to be applied to the text
-                // itself and the sharp pass dropped for that line.
-                //
-                // The current line and the one after it stay sharp in the
-                // reference; blur only starts from two lines out, then ramps
-                // hard. Radius is proportional to the type size, so it holds
-                // when the card is resized or the "Aa" bubble steps it up.
                 float blurPx = 0.f;
                 if (!isActive && distance >= 2) {
                     const float steps = std::min(3.f, (float)distance - 1.f);
                     blurPx = size * (ctx.fullScreen ? 0.055f : 0.030f) * steps;
                 }
                 if (lineHovered) blurPx = 0.f;   // pull a line into focus to click it
-                // Fullscreen dimmed inactive lines a further 0.48x on top of the
-                // distance falloff, which stacked into near-invisibility once
-                // the surface stopped being black.
                 float textAlpha = ctx.fullScreen && !isActive && !lineHovered
                     ? alpha * 0.88f : alpha;
-                // Positional edge fade, so a line straddling the clip boundary
-                // dissolves instead of being sliced mid-glyph.
-                //
-                // BOTTOM ONLY. The active line is now anchored to the very top
-                // of the column, so a symmetric fade dimmed exactly the line
-                // that is supposed to be brightest. The reference fades only
-                // downward too -- their top line is always crisp and full
-                // strength. A short top fade survives for lines that a manual
-                // scroll pushes up past the boundary.
                 {
                     const float lineMid = y + g_lineHeights[i] * 0.5f;
                     const float topEdge = Px(10.f);
@@ -654,8 +512,6 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                         dl->PushClipRect(
                             ImVec2(textPos.x, lyricsTop),
                             ImVec2(sweepRight, lyricsTop + lyricsHeight), true);
-                        // Same wrapping as the base pass, otherwise the
-                        // karaoke sweep drifts off the glyphs it is filling.
                         DrawWrappedLyric(dl, font, size, textPos,
                             LyricHighlightColor(),
                             g_cache[i].text.c_str(), wrapWidth);
@@ -667,15 +523,6 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
         }
         dl->PopClipRect();
 
-        // Sync pill. It floats just above the progress bar while the user has
-        // scrolled away from the current line, and snaps the column back.
-        //
-        // This was removed on the read that the pill was ours and not theirs.
-        // It is theirs -- it is right there in the reference the moment the
-        // lyrics are scrolled off-position, which is the only time it shows.
-        // Bottom-aligned to the end of the lyric column, not started there: the
-        // pill is Px(25) tall, so anchoring its TOP to lyricsBottom dropped it
-        // onto the "Lossless" row under the progress bar.
         if (ctx.lyricsSynced && g_manualScroll && !g_cache.empty()) {
             DrawSyncButton(ctx, lyricsBottom - Px(27.f));
         }
@@ -713,9 +560,6 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
                 ImGui::GetID("##lyric_scroll_focus"),
                 lyricsHovered || scrollbarHovered || scrollbarActive ||
                 g_manualScroll, 12.f);
-            // Near-invisible at rest, fades in while the lyrics are hovered or
-            // being scrolled. The old resting alpha of 58 left a permanent bar
-            // down the side that Matcha never shows.
             dl->AddRectFilled(ImVec2(lyricX + lyricWidth - 7.f, thumbY),
                               ImVec2(lyricX + lyricWidth - 4.f, thumbY + thumbH),
                               IM_COL32(255, 255, 255,
@@ -723,17 +567,11 @@ void DrawLyricsPanel(const LyricsPanelContext& ctx) {
         }
     }
 
-    // Page dots. The reference does show these -- three marks above the lyrics,
-    // aligned to the lyric column, with the first filled.
     {
         const float dotR = std::max(1.6f, Px(2.4f));
         const float step = dotR * 4.2f;
-        // Clamped away from the card edge: in fullscreen the lyric column starts
-        // only 5.5% down, so a fixed offset above it put the dots on the border.
         const float dotY = std::max(wp.y + Px(22.f),
                                     lyricsTop - Px(ctx.fullScreen ? 20.f : 16.f));
-        // While a lyric fetch is in flight the filled dot walks the row, so the
-        // pager doubles as the loading tell without adding a mark of its own.
         const int lit = ctx.lyricsLoading
             ? (int)(ImGui::GetTime() * 2.6) % 3 : 0;
         for (int i = 0; i < 3; ++i) {

@@ -7,17 +7,8 @@
 
 namespace native_music_player::detail {
 
-// Every layout constant in the player is authored against the mode's BASE size
-// (the DesiredSize for that mode). Because resizing is now a single uniform
-// scale, the ratio of the live window to that base is one number -- so the whole
-// card can be scaled by multiplying through it. Without this, dragging the card
-// bigger grew the panel but left the icons, text, and padding at their original
-// pixel sizes, which is the single most obvious way it stopped looking like the
-// real player.
 float UiScale();
 void SetUiScale(float scale);
-// Rounds to whole pixels so 1px rules and hairlines do not land on half-pixels
-// and blur once scaled.
 float Px(float v);
 
 void EnsureVisualPalette();
@@ -29,9 +20,6 @@ void UpdateAlbumArt(const media::NowPlaying& nowPlaying);
 bool HasAlbumArt();
 ImTextureID AlbumArtTexture();
 ImTextureID AlbumAtmosphereTexture();
-// Alpha-ramped copy of the atmosphere, laid over the cover's lower third
-// in artwork mode so the art dissolves into the card instead of ending
-// on a hard edge. Null until album art has been uploaded.
 ImTextureID AlbumArtworkFadeTexture();
 float& AlbumAtmosphereFadeRef();
 ImU32 LyricHighlightColor();
@@ -41,8 +29,6 @@ void DrawPlayerBackground(ImDrawList* drawList, const ImVec2& position,
                           float hoverAmount, float uiScale);
 void ReleaseVisualAssets();
 
-// Fill an SVG path (from music_player_icons.h) centred on `center`, scaled so
-// the viewBox spans `size` pixels.
 void FlattenSvgPath(const char* d, std::vector<std::vector<ImVec2>>& outSubpaths);
 void DrawSvgIcon(ImDrawList* drawList, const char* pathData, ImVec2 center,
                  float size, float viewBox, ImU32 color);
@@ -51,16 +37,11 @@ void StrokeSvgPath(ImDrawList* drawList, const char* pathData, ImVec2 center,
 
 void DrawMediaGlyph(ImDrawList* drawList, ImVec2 center, float radius,
                     int kind, ImU32 color);
-// kind: 0 = expand, 1 = shuffle, 2 = repeat, 3 = lyrics bubble, 4 = "Aa" bubble.
-// The two bubble marks letter themselves, so they need a font; every other kind
-// ignores it and may be passed nullptr.
 void DrawUtilityGlyph(ImDrawList* drawList, ImVec2 center, float radius,
                       int kind, ImU32 color, ImFont* labelFont = nullptr);
 
 void UpdateLyrics(const media::NowPlaying& nowPlaying);
 
-// The "Aa" bubble beside the lyrics bubble steps the lyric type up a size, the
-// way the same mark does in Apple Music. State lives with the lyrics panel.
 bool LyricsScaledUp();
 void ToggleLyricsScale();
 
@@ -89,8 +70,6 @@ struct LyricsPanelContext {
     ImVec2 windowSize{};
     float fullLyricsX = 0.0f;
     float fullLyricsWidth = 0.0f;
-    // Fullscreen artwork block, so the lyric column can be aligned to the cover
-    // instead of to the card's top edge.
     float fullArtY = 0.0f;
     float fullArtSize = 0.0f;
     double position = 0.0;
@@ -134,8 +113,6 @@ struct HeaderContext {
     ImDrawList* drawList = nullptr;
     ImFont* regular = nullptr;
     ImFont* bold = nullptr;
-    // The reference writes the sub-line as "Artist - Album", not the artist
-    // alone; album may be empty, in which case only the artist is shown.
     const char* album = "";
     ImVec2 windowPosition{};
     ImVec2 windowSize{};

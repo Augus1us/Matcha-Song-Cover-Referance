@@ -30,14 +30,10 @@
 #include <winrt/Windows.Media.Control.h>
 #include <winrt/Windows.Storage.Streams.h>
 
-// Don't pull `using namespace winrt::Windows::Foundation` — it aliases
-// IUnknown/IInspectable which collide with the COM versions WIC uses.
 namespace wmc = winrt::Windows::Media::Control;
 namespace wstr = winrt::Windows::Storage::Streams;
 namespace wjson = winrt::Windows::Data::Json;
 
-// Tiny RAII wrapper for raw COM pointers (avoids WRL/ComPtr to dodge the
-// IUnknown ambiguity vs winrt's IUnknown).
 template<typename T>
 struct ComHandle {
     T* p = nullptr;
@@ -48,10 +44,6 @@ struct ComHandle {
     T* Get() const { return p; }
 };
 
-// Polls the Windows GSMTC session manager
-// for title/artist/thumbnail/progress. Runs on a dedicated thread so WinRT's
-// .get() calls don't block the render loop.
-
 namespace media {
 
 static NowPlaying        s_state;
@@ -59,9 +51,6 @@ static std::mutex        s_mtx;
 static std::thread       s_thread;
 static std::atomic<bool> s_running{false};
 
-// Pending playback-control flags. The HUD sets these; the background thread
-// consumes them on its next tick by invoking the corresponding WinRT method
-// on the current GSMTC session. Atomics so we don't need a separate lock.
 static std::atomic<bool> s_reqTogglePlay{false};
 static std::atomic<bool> s_reqSkipNext{false};
 static std::atomic<bool> s_reqSkipPrev{false};
@@ -76,11 +65,6 @@ static std::atomic<uint64_t> s_lyricsRetryAtMs{0};
 static std::string s_lyricsTrackKey;
 static std::atomic<bool> s_spotifyOnly{true};
 
-// EVENT-DRIVEN update signal (was polling before). GSMTC fires
-// MediaPropertiesChanged / PlaybackInfoChanged / TimelinePropertiesChanged
-// the moment Spotify/YouTube/etc. update — set from those handlers so the
-// worker refetches on the very next tick instead of waiting for the next
-// poll. Seeded true so the first fetch after start happens immediately.
 static std::atomic<bool> s_dirty{true};
 
 void RequestTogglePlayPause() { s_reqTogglePlay.store(true); s_dirty.store(true); }
@@ -557,9 +541,6 @@ static LyricsResult LookupLrclibLyrics(const std::string& title, const std::stri
         }
     }
 
-    // GSMTC album metadata is often incomplete. Search first on normal track
-    // changes and select the closest-duration synchronized result; the slower
-    // exact endpoint above is reserved for an explicit Sync request.
     path = L"/api/search?track_name=" + UrlEncode(title) +
            L"&artist_name=" + UrlEncode(artist);
     response = FetchLrclib(path);
@@ -640,10 +621,6 @@ static void BeginLyricsFetch(const std::string& trackKey, const std::string& tit
 void Init() {
     if (s_running.exchange(true)) return;
     s_thread = std::thread([] {
-        // Multi-threaded apartment — blocking .get() on async ops behaves
-        // better in MTA than STA (STA needs message pumping, can hang on
-        // shutdown). MTA is the right choice for a worker thread that
-        // doesn't own any UI elements.
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
 
         IWICImagingFactory* wic = nullptr;
@@ -659,25 +636,11 @@ void Init() {
         bool haveArtForTrack = false;
         uint64_t lastArtAttemptTick = 0;
 
-        // Flicker dampener — when the WinRT session momentarily drops or
-        // throws (which happens on Spotify track changes / Cortana hiccups),
-        // we don't blank title+artist immediately. We mark when the "no
-        // session / error" state started; only after `kStickyMs` of
-        // sustained empty state do we actually clear the displayed track.
-        // Successful fetches reset the timer.
         constexpr uint64_t kStickyMs = 4000;
         uint64_t emptyStateStartTick = 0;
 
-        // Cache the session manager across polls. RequestAsync().get() is a
-        // heavyweight WinRT round-trip; calling it every 90ms was the real
-        // "music takes ~5s to update" bug — it stalled the whole poll loop.
-        // Acquire once, reuse, and only re-acquire if it drops or errors.
         wmc::GlobalSystemMediaTransportControlsSessionManager s_mgr{ nullptr };
 
-        // Event-driven update pipeline. Whenever GSMTC fires a change event,
-        // s_dirty flips and the sleep loop wakes; that way title/state/pos
-        // updates land within one 10ms slice of the source app broadcasting
-        // them, instead of waiting up to a full poll interval.
         wmc::GlobalSystemMediaTransportControlsSession s_boundSession{ nullptr };
         winrt::event_token tokProps{}, tokPlay{}, tokTime{}, tokCurSess{}, tokSessions{};
 
@@ -753,8 +716,6 @@ void Init() {
                     sourceIsSpotify = sourceLower.find("spotify") != std::string::npos;
                 }
 
-                // Re-bind handlers whenever the selected source changes.
-                // Keep Spotify selected while other media sessions are active.
                 if (session != s_boundSession) {
                     bindSession(session);
                 }
@@ -770,10 +731,6 @@ void Init() {
                     s_state.sourceIsSpotify = false;
                     s_state.sourceApp[0] = 0;
                     s_state.snapshotTickMs = nowT;
-                    // Only fully clear after sustained no-session — avoids
-                    // the "widget vanishes for a tick during track changes"
-                    // flicker. Position/duration still tick down to 0 so the
-                    // displayed scrub bar doesn't lie.
                     if (nowT - emptyStateStartTick > kStickyMs) {
                         bool hadTrack = s_state.title[0] != 0;
                         s_state.title[0] = 0;
@@ -802,10 +759,6 @@ void Init() {
                     loggedNoSession = false;
                 }
 
-                // Consume any pending playback-control requests from the UI.
-                // We do these BEFORE reading properties so the new state
-                // (e.g., "now paused" after a toggle) is reflected on the
-                // very next snapshot — no perceived input lag.
                 try {
                     if (s_reqTogglePlay.exchange(false)) {
                         session.TryTogglePlayPauseAsync().get();
@@ -885,10 +838,6 @@ void Init() {
                     posSec = std::chrono::duration<double>(pos).count();
                     durSec = std::chrono::duration<double>(end).count();
 
-                    // Position() belongs to LastUpdatedTime(), not to the time
-                    // this getter runs. Bring it forward to one well-defined
-                    // sample instant so the render thread can extrapolate from
-                    // that point without every GSMTC refresh pulling it back.
                     auto sampleTime = winrt::clock::now();
                     positionSampleTick = GetTickCount64();
                     double sampleAge = std::chrono::duration<double>(
@@ -901,8 +850,6 @@ void Init() {
                         posSec = std::clamp(posSec, 0.0, durSec);
                 }
 
-                // Thumbnail (album art). GSMTC properties can be polled often,
-                // but decoding and uploading identical art every poll is costly.
                 const std::string trackKey = title + "\n" + artist + "\n" + album;
                 const bool trackChanged = trackKey != artTrackKey;
                 const bool refreshLyrics = s_reqLyricsRefresh.exchange(false);
@@ -992,10 +939,6 @@ void Init() {
                 if (!loggedNoSession) {
                     loggedNoSession = true;
                 }
-                // Transient WinRT errors are common around track changes —
-                // do NOT blank title/artist, just mark not-playing. The
-                // sticky timer above will eventually clear if the error
-                // persists past kStickyMs.
                 uint64_t nowT = GetTickCount64();
                 if (emptyStateStartTick == 0) emptyStateStartTick = nowT;
                 std::lock_guard<std::mutex> lk(s_mtx);
@@ -1029,8 +972,6 @@ void Init() {
         };
 
         while (s_running.load()) {
-            // Consume the dirty flag so events fired during fetchOnce trigger
-            // ONE more pass (not silently lost).
             s_dirty.store(false);
             fetchOnce();
 
@@ -1040,12 +981,6 @@ void Init() {
                 hasVisibleMedia = s_state.playing || s_state.title[0] != 0;
             }
 
-            // Event-driven wake. GSMTC handlers set s_dirty within ms of any
-            // real change (title, play/pause, position). We sleep long between
-            // fetches — 1s when media's playing (so the position bar keeps
-            // healing forward even in the rare case an event is dropped), 3s
-            // when idle (discovery only). Control-request atomics keep the
-            // sub-15ms feel on user actions.
             const int totalMs = hasVisibleMedia ? 1000 : 3000;
             for (int slept = 0; slept < totalMs && s_running.load(); slept += 10) {
                 if (s_dirty.load() ||
@@ -1055,8 +990,6 @@ void Init() {
             }
         }
 
-        // Clean up event subscriptions on shutdown so WinRT doesn't hold the
-        // session ref forever.
         try {
             if (s_boundSession) {
                 if (tokProps.value) s_boundSession.MediaPropertiesChanged(tokProps);
@@ -1078,18 +1011,10 @@ void Shutdown() {
     if (!s_running.exchange(false)) return;
     s_lyricsGeneration.fetch_add(1); // discard any in-flight lyrics result
     s_artGeneration.fetch_add(1);
-    // Don't .join() — the WinRT thread can be inside a blocking .get() on a
-    // RequestAsync call. Joining can hang for seconds (Windows shows "Not
-    // Responding"). Detach instead; the process is about to exit anyway, the
-    // OS will reap the thread cleanly.
     if (s_thread.joinable()) s_thread.detach();
-    // Don't free s_state.artBgra here — the still-running detached thread may
-    // race against the free. Process exit will reclaim the memory.
 }
 
 void Tick() {
-    // No-op: the background thread does the work. Kept for API compatibility
-    // with the old window-title-scraping implementation.
 }
 
 const NowPlaying& Current() { return s_state; }

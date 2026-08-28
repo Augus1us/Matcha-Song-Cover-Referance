@@ -28,12 +28,6 @@ struct WindowState {
     bool modeTransition = false;
     ImVec2 fullScreenPos{-1.f, -1.f};
     bool fullScreenPosValid = false;
-    // How big the user dragged the card, as a multiple of the mode-s base size.
-    // Without this the card had no memory of its own size: DesiredSize() always
-    // returns the BASE size for the mode, so every frame that re-applied a size
-    // -- a mode change, the tail of a transition -- threw the drag away and the
-    // card snapped back. One scalar is enough because resizing is uniform, and
-    // keeping it here also carries the size across mode switches.
     float userScale = 1.f;
 };
 
@@ -62,16 +56,6 @@ WindowState& State() {
     return s;
 }
 
-// The window is not freely resizable: every mode has one natural shape, and a
-// drag only chooses HOW BIG that shape is -- one scalar, like a size slider.
-// Free resize let the card be stretched into proportions the layout was never
-// designed for (squashed art, lyrics in a tall thin column), which is the main
-// reason it did not read as the real player.
-//
-// A drag is projected onto the mode's aspect line rather than following one
-// axis, so dragging any handle -- corner or edge -- scales the whole card and
-// it tracks the cursor instead of fighting it. For base (w0,h0) and a dragged
-// (w,h), the closest point on { s*(w0,h0) } is s = (w0*w + h0*h)/(w0^2 + h0^2).
 struct AspectLock { float baseW, baseH, minScale, maxScale; };
 AspectLock g_aspectLock{};
 
@@ -81,16 +65,6 @@ void ApplyUniformScale(ImGuiSizeCallbackData* data) {
     const float denom = a->baseW * a->baseW + a->baseH * a->baseH;
     float s = (a->baseW * data->DesiredSize.x + a->baseH * data->DesiredSize.y) / denom;
     s = std::clamp(s, a->minScale, a->maxScale);
-    // ROUND, do not let the result stay fractional.
-    //
-    // The projection returns a fractional size (e.g. 416.93 x 684.05) and ImGui
-    // then FLOORS the window size to 416 x 684. Next frame that floored size
-    // projects to a slightly smaller s, which floors again -- a feedback loop
-    // that walked the card ~1px smaller every frame until it crept all the way
-    // back to its base size. That is the resize "snapping back".
-    //
-    // Rounding to whole pixels here makes the mapping a fixed point: the same
-    // size in gives the same size out, so once the drag ends the card holds.
     data->DesiredSize.x = std::floor(a->baseW * s + 0.5f);
     data->DesiredSize.y = std::floor(a->baseH * s + 0.5f);
 }
@@ -103,8 +77,6 @@ ImVec2 DesiredSize(const ImGuiViewport* vp, bool fullScreen, bool artworkView,
     constexpr float kExpandedHeight = 484.f;
     constexpr float kArtworkWidth = 293.f;
     constexpr float kArtworkHeight = 303.f;
-    // When the host window itself is fullscreen, the card fills it edge to edge;
-    // otherwise the fullscreen LAYOUT is a bounded, centred card.
     if (music_host::overlay::IsFullscreenWindow()) {
         outFull = vp->WorkSize;
     } else {
@@ -166,14 +138,12 @@ void DrawMusicPlayer() {
 
     const bool firstFrame = !st.initialized;
     const bool modeChanged = st.previousMode >= 0 && st.previousMode != mode;
-    // A window-fullscreen card fills the monitor exactly; the user-scale slider
-    // does not apply to it.
     const bool windowFull = music_host::overlay::IsFullscreenWindow();
     const float maxUserScale = compactMode ? kMaxUserScaleCompact
                                            : kMaxUserScaleExpanded;
     st.userScale = windowFull ? 1.f
                               : std::clamp(st.userScale, kMinUserScale, maxUserScale);
-    // Everything below sizes against the user-s scale, not the raw base.
+    // Sizes below follow the user scale, not the raw base.
     const ImVec2 scaledDesired(desiredSize.x * st.userScale,
                                desiredSize.y * st.userScale);
     if (firstFrame) {
@@ -201,12 +171,7 @@ void DrawMusicPlayer() {
     const ImVec2 requestedSize = st.modeTransition ? st.animatedSize : scaledDesired;
     if (firstFrame || modeChanged || st.modeTransition || fullScreen)
         ImGui::SetNextWindowSize(requestedSize, ImGuiCond_Always);
-    // No resize handle while the window fills the monitor: the card is locked to
-    // the window, so the aspect-lock constraint would just fight the OS size.
     if (!fullScreen && !st.modeTransition && !windowFull) {
-        // Same rule in every mode. Artwork and lyrics modes used to be free-form
-        // between a min and a max, so they could be dragged into shapes the
-        // layout does not support; now they scale exactly like the compact card.
         g_aspectLock.baseW = desiredSize.x;
         g_aspectLock.baseH = desiredSize.y;
         g_aspectLock.minScale = kMinUserScale;
@@ -220,8 +185,6 @@ void DrawMusicPlayer() {
     }
     if (fullScreen) {
         if (windowFull) {
-            // Card pinned to the window's top-left, filling it every frame; no
-            // remembered position, no drag.
             ImGui::SetNextWindowPos(vp->WorkPos, ImGuiCond_Always);
         } else if (firstFrame || modeChanged || st.wasWindowFull) {
             const ImVec2 centered(
@@ -246,23 +209,9 @@ void DrawMusicPlayer() {
         ImGuiWindowFlags_NoMove;
     if (fullScreen || st.modeTransition || windowFull)
         flags |= ImGuiWindowFlags_NoResize;
-    // Resize ONLY from the bottom-right grip -- not the edges or the other
-    // corners. ImGui resizes from edges when ConfigWindowsResizeFromEdges is on
-    // (the default), which let the card be dragged from any side and briefly
-    // stretched off its aspect line before the constraint re-projected it -- the
-    // distortion that also shoved the lyrics into each other mid-drag. The flag
-    // is read inside Begin (that is where the manual resize runs), so it is
-    // scoped to this one window and restored immediately, leaving any other
-    // window in the host untouched.
     ImGuiIO& io = ImGui::GetIO();
     const bool prevResizeEdges = io.ConfigWindowsResizeFromEdges;
     io.ConfigWindowsResizeFromEdges = false;
-    // Hide ImGui's own resize grip. It renders a filled blue wedge in the
-    // bottom-right corner (the dark theme's 0.26/0.59/0.98 accent), which is not
-    // a Matcha element and sat on top of the two thin corner strokes we draw
-    // ourselves further down. Zeroing the colour keeps the grip's hit box and
-    // drag behaviour -- only the wedge stops being painted. Pushed around Begin
-    // because that is where the grip is both colour-resolved and rendered.
     ImGui::PushStyleColor(ImGuiCol_ResizeGrip, ImVec4(0.f, 0.f, 0.f, 0.f));
     ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, ImVec4(0.f, 0.f, 0.f, 0.f));
     ImGui::PushStyleColor(ImGuiCol_ResizeGripActive, ImVec4(0.f, 0.f, 0.f, 0.f));
@@ -276,9 +225,6 @@ void DrawMusicPlayer() {
     // Resize is uniform, so width alone defines the scale for the whole card.
     const float liveScale = desiredSize.x > 1.f ? ws.x / desiredSize.x : 1.f;
     detail::SetUiScale(liveScale);
-    // Adopt whatever the user dragged to, so it survives the next frame and the
-    // next mode switch. Skipped mid-transition, where the size is ours and not
-    // theirs.
     if (!st.modeTransition && !firstFrame && !modeChanged)
         st.userScale = std::clamp(liveScale, kMinUserScale, maxUserScale);
     const bool resizing = std::abs(ws.x - st.lastSize.x) > 0.5f ||
@@ -287,11 +233,6 @@ void DrawMusicPlayer() {
     st.previousMode = mode;
     st.wasWindowFull = windowFull;
 
-    // Only keep the card on screen when it is NOT being resized. This clamp ran
-    // every frame, so growing the card near a screen edge pushed its position
-    // back to keep the far edge inside the viewport -- the card appeared to walk
-    // away from the cursor while dragging the grip, and shrinking never undid
-    // it. While resizing, the top-left stays exactly where the user put it.
     if (!resizing) {
         ImVec2 clampedPos(
             std::clamp(wp.x, vp->WorkPos.x + 8.f,
@@ -388,23 +329,10 @@ void DrawMusicPlayer() {
         return;
     }
 
-    // Fullscreen layout scales with the window instead of sitting tiny in the
-    // corners. The old caps (art 158, column 195, lyrics 300) were sized for the
-    // bounded ~806-wide card, so on a truly fullscreen window everything hugged
-    // the edges and left a huge empty middle. The reference instead makes the
-    // art large, the left column a vertically-centred block (art, title,
-    // progress, controls), and the lyrics fill the right half in big type.
-    // The reference's fullscreen cover is a good deal larger than a third of the
-    // height -- it runs to roughly 40% and dominates the left column, where ours
-    // read as a thumbnail floating in empty space.
     const float fullArtSize = std::clamp(ws.y * 0.405f, 150.f, 560.f);
     const float fullColumnWidth = std::max(195.f, fullArtSize + 24.f);
-    // The reference insets its whole left column about a tenth of the width;
-    // at 5.5% ours hugged the card edge with the title nearly touching it.
     const float fullColumnX = wp.x + std::max(ws.x * 0.10f, 40.f);
     const float fullArtX = fullColumnX + (fullColumnWidth - fullArtSize) * 0.5f;
-    // The left block is art + info (~66) + progress (~44) + controls (~62); centre
-    // it vertically, but never let it ride above a small top margin.
     const float fullBlockHeight = fullArtSize + 172.f;
     const float fullArtY = wp.y + std::max(ws.y * 0.05f,
                                            (ws.y - fullBlockHeight) * 0.5f);
@@ -500,9 +428,6 @@ void DrawMusicPlayer() {
             ImGui::GetID("##music_resize_focus"), gripHovered, 14.f);
         const ImU32 gripColor = IM_COL32(
             255, 255, 255, (int)(26.f + gripFocus * 96.f));
-        // Kept tight to the corner. The longer of these two strokes reached far
-        // enough inward to cross the lyrics button sitting at the same height,
-        // so the grip and the icon overlapped; the reference corner is clean.
         dl->AddLine(ImVec2(corner.x - 4.f, corner.y),
                     ImVec2(corner.x, corner.y - 4.f), gripColor, 1.1f);
         dl->AddLine(ImVec2(corner.x - 8.f, corner.y),

@@ -112,28 +112,10 @@ ImU32 Color(ImVec4 color, float alpha = 1.f) {
     return ImGui::ColorConvertFloat4ToU32(color);
 }
 
-// Palette extraction, frequency-based (Apple Music's approach).
-//
-// This used to average: a 4x4 grid where each block was averaged, then hue
-// buckets that averaged again. Averaging distinct colours is the problem --
-// blending a pink and a blue gives a muddy grey-violet that appears NOWHERE in
-// the artwork, and every average pulls toward the middle, killing both
-// saturation and lightness. That is why a bright pink cover came out dark
-// maroon: not the darkening alone, but a palette of colours the cover never
-// contained.
-//
-// Apple instead quantises the cover into a colour histogram and takes the most
-// FREQUENT colours. A frequent colour is by definition one that actually
-// appears in the artwork, so it stays as vivid as the cover is. Candidates are
-// then scored for how well they read as a surface -- near-black and near-white
-// are dropped, saturation is rewarded, and mid-to-light luminance is preferred
-// -- and near-duplicates are suppressed so the accents are genuinely distinct.
 MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
     MusicPalette fallback;
     if (!bgra || width <= 0 || height <= 0) return fallback;
 
-    // 5 bits per channel: fine enough to keep shades apart, coarse enough that
-    // dithering and JPEG noise still land in the same bucket.
     constexpr int kBits = 5;
     constexpr int kLevels = 1 << kBits;              // 32
     constexpr int kBucketCount = kLevels * kLevels * kLevels;
@@ -159,18 +141,12 @@ MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
             overall.r += c.r * alpha; overall.g += c.g * alpha;
             overall.b += c.b * alpha; overallWeight += alpha;
 
-            // Skip the extremes outright: they dominate most covers by sheer
-            // area (borders, blown highlights) and make every palette grey.
             if (value < 0.10f || (value > 0.96f && sat < 0.10f)) continue;
 
             const int ri = std::min(kLevels - 1, (int)(c.r * kLevels));
             const int gi = std::min(kLevels - 1, (int)(c.g * kLevels));
             const int bi = std::min(kLevels - 1, (int)(c.b * kLevels));
             Bucket& bucket = buckets[(size_t)(ri * kLevels + gi) * kLevels + bi];
-            // Weight by area, but let saturated pixels count for more so a small
-            // vivid subject can still beat a large flat background.
-            // Same reasoning as the score: area is the signal, saturation is
-            // a nudge. A steep weight here re-introduces the same bias.
             const float w = alpha * (0.85f + sat * 0.35f);
             bucket.r += c.r * w; bucket.g += c.g * w; bucket.b += c.b * w;
             bucket.weight += w;
@@ -193,20 +169,7 @@ MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
                              bucket.b / bucket.weight };
         const float sat = Saturation(c);
         const float lum = Luma(c);
-        // Prefer the band a surface actually reads well in. A raised cosine
-        // centred a little above mid-grey: dark colours make the muddy card we
-        // had, blown-out ones leave nothing for white text to sit on.
         const float lumWindow = std::exp(-((lum - 0.58f) * (lum - 0.58f)) / 0.10f);
-        // sqrt on the weight so a huge flat area cannot bury everything else.
-        // Saturation nudges the ranking; it does not decide it.
-        //
-        // At (0.35 + sat*1.55) a small vivid patch beat the whole rest of the
-        // cover: on one reference the winner was RGB(109,145,219) -- one
-        // character's blue hair -- while the cover's own mean is (139,120,125),
-        // warm. The card came out cool against a warm cover, and the reference
-        // tracks the cover. Flattening this lets frequency decide, which is
-        // what "most common colour" is supposed to mean, with saturation only
-        // breaking ties between similarly common colours.
         const float score = std::sqrt(bucket.weight) *
                             (0.80f + sat * 0.45f) * (0.30f + lumWindow);
         candidates.push_back({ c, bucket.weight, score });
@@ -215,8 +178,6 @@ MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
     std::sort(candidates.begin(), candidates.end(),
               [](const Candidate& x, const Candidate& y) { return x.score > y.score; });
 
-    // Pick distinct colours: reject anything too near one already chosen, so the
-    // accents are not three shades of the same thing.
     MusicRgb picks[3];
     int picked = 0;
     for (const Candidate& cand : candidates) {
@@ -238,30 +199,6 @@ MusicPalette ExtractPalette(const uint8_t* bgra, int width, int height) {
 
     const MusicRgb a = picks[0], b = picks[1], c = picks[2];
     MusicPalette result;
-    // Surface: lead with the dominant colour, settled into a light, low-chroma
-    // wash so it reads as a tinted surface rather than a slab of the cover.
-    // Light, but still clearly tinted by the cover. Dropping saturation as far
-    // as 0.44 to get the brightness up left the card almost pastel; the
-    // reference keeps more chroma than that.
-    // Mid-tone, not pale. The surface has to stay dark enough for white text to
-    // read against it -- pushed to 0.84 the card was lighter than the reference
-    // and the lyrics washed out, which is the trade-off that matters here since
-    // the text is white by design and the blurred cover is what separates it.
-    // Measured against the reference on the same cover: its card sits at
-    // RGB(85,72,76), luminance 78, and is warm-neutral -- far less saturated
-    // than the tint the cover would suggest. Ours had drifted to (118,111,137),
-    // luminance 122: 57% too bright and cool where the reference is warm.
-    // Value and chroma are pulled back to land on those numbers.
-    // Surface hue comes from the cover MEAN, not the dominant bucket.
-    //
-    // The reference's card is essentially a desaturated version of the cover's
-    // average colour -- warm when the cover is warm, neutral when it is not.
-    // The most-frequent bucket cannot carry the surface here: on this cover the
-    // top bucket is RGB(109,145,219), one character's blue hair (R-B -109), so
-    // any surface built from it stays cool no matter how it is mixed, while the
-    // cover's own mean is (139,120,125), warm (+14) -- which is what the
-    // reference matches. Only a small amount of the dominant is folded back in
-    // for a little life. The frequent colours still drive the accents below.
     result.top = ToVec4(Tone(Mix(overall, a, 0.14f), 0.35f, 0.34f, 0.06f));
     result.bottom = ToVec4(Tone(Mix(overall, Mix(a, b, 0.5f), 0.12f),
                                 0.28f, 0.34f, 0.05f));
@@ -458,11 +395,6 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
         dl->AddImageRounded(atmosphere, min, max,
                             ImVec2(0.f, 0.f), ImVec2(1.f, 1.f),
                             IM_COL32(255, 255, 255, (int)fieldAlpha), rounding);
-        // Light scrim only. This ran at alpha 58-90 over the blurred cover, and
-        // together with the near-black base beneath it swallowed most of the
-        // palette that gets drawn on top -- raising the palette brightness
-        // barely showed, because it was being applied at partial opacity over
-        // two dark layers.
         dl->AddRectFilled(min, max,
             IM_COL32(3, 4, 7,
                 fullScreen ? 38 : (artworkView ? 30 : (showLyrics ? 22 : 28))),
@@ -474,10 +406,6 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
         surfaceTop = Lerp(p.top, p.accentA, 0.10f);
         surfaceBottom = Lerp(p.bottom, p.accentC, 0.09f);
     }
-    // The palette IS the surface colour, so it has to be close to opaque.
-    // At 0.28-0.46 the card was mostly the dark layers underneath showing
-    // through, which is what kept it muddy no matter how the palette was tuned.
-    // Artwork mode stays lower: there the cover itself is the surface.
     const float paletteOpacity = fullScreen ? 0.80f
         : (artworkView ? 0.46f : (showLyrics ? 0.94f : 0.94f));
     DrawRoundedGradient(dl,
@@ -526,15 +454,9 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
     if (artworkView && haveArt) {
         ImTextureID art = AlbumArtTexture();
         if (art) {
-            // Fill the whole card. The cover used to be drawn SQUARE, sized by
-            // the card's width, so on a card taller than it is wide the art
-            // stopped short and left a band of plain background along the
-            // bottom edge -- visible as a dead strip under the controls.
             const ImVec2 artMin(min.x + 1.f, min.y + 1.f);
             const ImVec2 artMax(max.x - 1.f, max.y - 1.f);
             const float artExtent = artMax.y - artMin.y;
-            // Cover-fit rather than stretch: crop the long axis in UV space so
-            // a square cover fills a non-square card without distorting faces.
             const float rectW = artMax.x - artMin.x;
             const float rectH = artExtent;
             float uvX = 0.f, uvY = 0.f;
@@ -544,22 +466,11 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
                                 ImVec2(uvX, uvY), ImVec2(1.f - uvX, 1.f - uvY),
                                 IM_COL32_WHITE, rounding - 1.f);
             const float fadeTop = artMax.y - std::min(112.f, artExtent * 0.37f);
-            // The alpha-ramped atmosphere copy carries the dissolve now, so the
-            // flat darkening below it is only a whisper -- at the old strength
-            // the two stacked and the bottom of every cover went muddy.
-            //
-            // Both of these MUST round their bottom corners to the card. Drawn
-            // square (plain AddImage / AddRectFilledMultiColor) they poked past
-            // the card's rounded corners, leaving the square nubs at the bottom
-            // that showed under the controls.
             if (ImTextureID fade = AlbumArtworkFadeTexture())
                 dl->AddImageRounded(fade, artMin, artMax,
                              ImVec2(0.f, 0.f), ImVec2(1.f, 1.f),
                              IM_COL32_WHITE, rounding - 1.f,
                              ImDrawFlags_RoundCornersBottom);
-            // Flat low-alpha darkening with bottom-rounded corners, in place of
-            // the square multicolour gradient. At alpha 12 the loss of the
-            // vertical ramp is imperceptible, and the corners now match.
             dl->AddRectFilled(ImVec2(artMin.x, fadeTop), artMax,
                 IM_COL32(2, 3, 5, 12), rounding - 1.f,
                 ImDrawFlags_RoundCornersBottom);
@@ -568,10 +479,6 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
 
     DrawRoundedGradient(dl,
         ImVec2(min.x, min.y), ImVec2(max.x, max.y),
-        // Much lighter black wash than before. The bottom corners carried
-        // alpha 28-36 (112/90 in fullscreen), which put a heavy vignette across
-        // the lower half of the card -- the reference has no such shading, its
-        // surface is close to even top to bottom.
         IM_COL32(0, 0, 0, fullScreen ? 34 : (artworkView ? 0 : 4)),
         IM_COL32(0, 0, 0, fullScreen ? 28 : (artworkView ? 0 : 6)),
         IM_COL32(0, 0, 0, fullScreen ? 16 :
@@ -584,15 +491,6 @@ void DrawPlayerBackground(ImDrawList* dl, const ImVec2& min, const ImVec2& size,
         dl->AddRectFilled(min, max,
             IM_COL32(255, 255, 255, (int)(11.f * hover)), rounding);
 
-    // One hairline, one radius. Previously an outer dark ring at `rounding` and
-    // an inner light ring at `rounding - 1.5f` were drawn 1.5px apart: two
-    // different curves at the corners, which read as a doubled, ragged edge
-    // exactly where the eye checks a rounded rectangle. Insetting a stroke on a
-    // rounded rect needs the radius reduced by the SAME inset to stay
-    // concentric, and even then the two strokes fight each other at this size.
-    //
-    // A single 1px light border sitting just inside the fill matches the real
-    // player; the card already separates from the desktop by its own contrast.
     dl->AddRect(ImVec2(min.x + 0.5f, min.y + 0.5f),
                 ImVec2(max.x - 0.5f, max.y - 0.5f),
                 IM_COL32(236, 242, 248,

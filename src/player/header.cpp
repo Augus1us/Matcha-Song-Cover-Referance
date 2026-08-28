@@ -48,16 +48,10 @@ void DrawFullscreenHeader(const HeaderContext& ctx) {
         dl->AddRectFilled(artMin, artMax, IM_COL32(255, 255, 255, 16), 8.f);
     }
 
-    // Fullscreen type ran smaller than the reference, which sets its title and
-    // sub-line noticeably larger against the same artwork size.
-    // Type scales with the art. A ~370px cover wants a bigger title than the
-    // 158px one the old fixed 17px was set for.
     const float titleSize = std::clamp(ctx.fullArtSize * 0.072f, 17.f, 30.f);
     const float subSize   = std::clamp(ctx.fullArtSize * 0.052f, 12.5f, 20.f);
     const std::string title = Ellipsize(ctx.title ? ctx.title : "",
                                          ctx.bold, titleSize, ctx.fullColumnWidth);
-    // Same "Artist - Album" sub-line as the compact header; the fullscreen view
-    // was still showing the artist alone.
     std::string fullSub = ctx.artist ? ctx.artist : "";
     if (ctx.album && ctx.album[0] && ctx.artist &&
         std::strcmp(ctx.album, ctx.artist) != 0) {
@@ -102,9 +96,6 @@ void DrawFullscreenHeader(const HeaderContext& ctx) {
                 ImVec2(closeMin.x + 16.f, closeMin.y + 16.f), closeColor, 1.5f);
     dl->AddLine(ImVec2(closeMin.x + 16.f, closeMin.y + 8.f),
                 ImVec2(closeMin.x + 8.f, closeMin.y + 16.f), closeColor, 1.5f);
-    // The □ takes the WINDOW to true fullscreen (fills the monitor); it does not
-    // leave this view. The × exits the expanded view back to the compact card --
-    // and drops OS fullscreen too, so closing never strands the window frameless.
     if (restoreClicked) {
         music_host::overlay::ToggleFullscreenWindow();
     }
@@ -133,10 +124,6 @@ void DrawArtworkBackButton(const HeaderContext& ctx) {
     const float backHv = music_host::animation::Anim(
         ImGui::GetID("##art_back_hv"), backHovered, 20.f);
     const ImVec2 backCtr(backMin.x + bw * 0.5f, backMin.y + bh * 0.5f);
-    // Always-on subtle backing so the arrow reads on ANY cover, darkening on
-    // hover. The reference keeps the control visible without a hover; a bare
-    // white line vanished on pale or busy art. A soft dark disc behind it does
-    // the job without a hard chrome button.
     dl->AddCircleFilled(backCtr, bw * 0.46f,
                         IM_COL32(6, 8, 12, (int)(70 + 96 * backHv)), 28);
     if (backHv > 0.01f)
@@ -239,8 +226,6 @@ void DrawCompactHeader(const HeaderContext& ctx) {
         ImVec2(tx, wp.y + Px(compact ? 14.f : 15.f)),
         IM_COL32(255, 255, 255, 245), titleShown.c_str());
     if (ctx.artist && ctx.artist[0]) {
-        // "Artist - Album" like the reference; the album half is dropped when
-        // the media session does not report one.
         std::string sub = ctx.artist;
         if (ctx.album && ctx.album[0] && std::strcmp(ctx.album, ctx.artist) != 0) {
             static const char kEmDash[] = { 32, 32, (char)0xE2, (char)0x80,

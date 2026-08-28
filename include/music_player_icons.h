@@ -1,11 +1,6 @@
 #pragma once
 
-// Icon path data, generated from assets/icons/*.svg.
-//
-// Bootstrap Icons (MIT) for the transport and fullscreen marks, plus a custom
-// chat-quote bubble. Kept as source strings rather than a baked font so the
-// shapes stay exactly what the SVG says -- including the small corner arcs that
-// make a filled play triangle read as rounded instead of spiky.
+// Generated from assets/icons (Bootstrap Icons, MIT, plus a custom bubble)
 
 namespace native_music_player::icons {
 
@@ -35,12 +30,7 @@ constexpr const char* kPausePath = "M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3
 constexpr float kPlayViewBox = 16.0f;
 constexpr const char* kPlayPath = "m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393";
 
-// rewind-fill.svg / fast-forward-fill.svg  (Bootstrap Icons, MIT, viewBox 16)
-//
-// NOT skip-backward-fill / skip-forward-fill. Those carry a vertical BAR beside
-// the triangles -- the "skip to start/end of list" symbol -- and that bar is
-// clearly absent in the reference, which uses the plain double triangle. The
-// small gap between the two triangles is part of the glyph, not a seam in ours.
+// rewind-fill.svg / fast-forward-fill.svg  (viewBox 16)
 constexpr float kPrevViewBox = 16.0f;
 constexpr const char* kPrevPath = "M8.404 7.304a.802.802 0 0 0 0 1.392l6.363 3.692c.52.302 1.233-.043 1.233-.696V4.308c0-.653-.713-.998-1.233-.696L8.404 7.304zM.404 7.304a.802.802 0 0 0 0 1.392l6.363 3.692c.52.302 1.233-.043 1.233-.696V4.308c0-.653-.713-.998-1.233-.696L.404 7.304z";
 

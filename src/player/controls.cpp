@@ -10,20 +10,7 @@
 
 namespace native_music_player::detail {
 
-// Transport glyphs, matched to Apple Music / Matcha.
-//
-// Previous and next are DOUBLE TRIANGLES (backward.fill / forward.fill), not
-// the bar-plus-triangle "skip to start/end" glyph -- that is a different symbol
-// and reads as the wrong control at a glance. The two triangles meet at the
-// centre with no gap and no bar.
-//
-// kind: 0 = previous, 1 = play, 2 = pause, 3 = next.
-// Transport marks come straight from the SVGs in assets/icons (Bootstrap Icons,
-// MIT). Their corners are rounded by small arcs in the path data; the previous
-// hand-placed triangles had sharp points, which is what made the row look spiky
-// beside the real player.
-//
-// kind: 0 = previous, 1 = play, 2 = pause, 3 = next.
+// Transport marks from assets/icons (Bootstrap Icons, MIT)
 void DrawMediaGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
     // r is a half-extent; the SVG viewBox spans the whole icon box.
     const float box = r * 2.35f;
@@ -35,19 +22,11 @@ void DrawMediaGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col) {
     }
 }
 
-// Utility marks: fullscreen and the lyrics bubble come from the same SVG set.
-// Shuffle and repeat have no filled equivalent there, so they stay as Lucide
-// geometry (https://lucide.dev, ISC) -- stroked, at a matching weight.
-//
-// kind: 0 = expand, 1 = shuffle, 2 = repeat, 3 = lyrics bubble, 4 = "Aa" bubble.
+// Shuffle and repeat are Lucide geometry (ISC)
 void DrawUtilityGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col,
                       ImFont* labelFont) {
     const float box = r * 2.35f;
     if (kind == 0) {
-        // Two opposed diagonal arrows, not the square bracket the fullscreen SVG
-        // draws. The reference's expand mark is a resize arrow pair: a head at
-        // the upper-left and one at the lower-right, each with a short tail, and
-        // no connecting shaft between them.
         const float a = r * 0.74f, head = r * 0.50f;
         const float w = std::max(1.25f, r * 0.23f);
         const ImVec2 tl(c.x - a, c.y - a), br(c.x + a, c.y + a);
@@ -62,26 +41,12 @@ void DrawUtilityGlyph(ImDrawList* dl, ImVec2 c, float r, int kind, ImU32 col,
         return;
     }
     if (kind == 3 || kind == 4) {
-        // SOLID speech bubble with the label knocked out of it. The reference
-        // draws a filled white bubble with dark glyphs inside; we used to stroke
-        // the outline and fill the quote marks in the same colour, which reads
-        // as a hollow outline mark and is much lighter than their solid chip.
-        //
-        // The bubble is the icon's own outline path, filled instead of stroked,
-        // so the corner radii and the tail come from the artwork rather than
-        // from a rounded rect guessed to match it.
         DrawSvgIcon(dl, icons::kLyricsPath0, c, box, icons::kLyricsViewBox, col);
-        // Glyphs are punched in the CARD's ink, not in white -- they are holes
-        // in the filled shape. Alpha tracks the bubble's so it dims as one.
         const int alpha = (int)((col >> IM_COL32_A_SHIFT) & 0xFF);
         const ImU32 ink = IM_COL32(52, 43, 48, alpha);
         if (kind == 3) {
-            // The quote marks are a subpath of the same SVG, already positioned
-            // inside the bubble, so they land correctly at any size.
             DrawSvgIcon(dl, icons::kLyricsPath1, c, box, icons::kLyricsViewBox, ink);
         } else if (labelFont) {
-            // Body of the bubble spans y 4.75..16.25 of a 24 viewBox, so its
-            // centre sits slightly above the icon's, and the tail hangs below.
             const float unit = box / icons::kLyricsViewBox;
             const float bodyH = 11.5f * unit;
             const float bodyCy = c.y + (10.5f - 12.f) * unit;
@@ -129,11 +94,6 @@ void DrawTransportControls(const TransportContext& ctx) {
     const bool showLyrics = *ctx.showLyrics;
     const float S = ctx.uiScale;
 
-    // In fullscreen the progress bar sits directly under the art + title block
-    // (which is vertically centred), instead of being pinned to the very bottom
-    // of the window -- that pinning is what left the huge empty middle on a
-    // truly fullscreen window. The gap below the art tracks the title size so it
-    // scales with the art.
     const float fsTitle = std::clamp(ctx.fullArtSize * 0.072f, 17.f, 30.f);
     const float barY = fullScreen
         ? ctx.fullArtY + ctx.fullArtSize + fsTitle * 3.4f + 20.f
@@ -170,8 +130,6 @@ void DrawTransportControls(const TransportContext& ctx) {
         timelineDragSeekSec = -1.0;
     }
     ImGui::PopID();
-    // Fully pill-rounded track and fill (radius = half thickness), matching the
-    // reference's rounder bar.
     const float barR = (barMax.y - barMin.y) * 0.5f;
     dl->AddRectFilled(barMin, barMax, IM_COL32(255, 255, 255, 76), barR);
     dl->AddRectFilled(barMin, ImVec2(barMin.x + (barMax.x - barMin.x) * displayProgress, barMax.y),
@@ -213,11 +171,6 @@ void DrawTransportControls(const TransportContext& ctx) {
                                        : wp.y + ws.y - Px(20.f)));
     float cx = fullScreen ? (barMin.x + barMax.x) * 0.5f
         : wp.x + ws.x * (compactMusic ? 0.48f : 0.5f);
-    // Spacing is capped by the width actually available, not just scaled: the
-    // row also carries the utility glyphs at each end, and at narrow widths the
-    // fixed 35-69px spacing pushed next/repeat into each other. Reserving room
-    // for the outer glyphs and dividing what's left keeps them apart at every
-    // size instead of overlapping once the card is small.
     const float outerReserve = Px(compactMusic ? 30.f : 56.f);
     const float usable = std::max(60.f, ws.x - outerReserve * 2.f);
     const float wantSpacing = (compactMusic ? 37.f
@@ -229,11 +182,6 @@ void DrawTransportControls(const TransportContext& ctx) {
     const float secondaryRadius = fullScreen
         ? std::clamp(ctx.fullArtSize * 0.058f, 15.5f, 27.f)
         : (compactMusic ? 11.f : 14.5f) * S;
-    // Glyph half-extents. In fullscreen these scale with the button (which
-    // scales with the art); elsewhere they keep their tuned pixel sizes times
-    // the UI scale. Without this the fullscreen glyphs stayed ~7px inside a
-    // 26px button, because their size was tied to uiScale, which is 1 when the
-    // window itself is fullscreen.
     const float playGlyph = fullScreen ? primaryRadius * 0.46f : 8.7f * S;
     const float skipGlyph = fullScreen ? secondaryRadius * 0.58f
                                        : (compactMusic ? 5.2f : 6.7f) * S;
@@ -284,8 +232,6 @@ void DrawTransportControls(const TransportContext& ctx) {
     auto utilityButton = [&](const char* id, const ImVec2& center, int icon,
                              bool selected) {
         ImGui::PushID(id);
-        // Hitbox matches the drawn size (bigger in fullscreen), so the clickable
-        // area is not a tiny 10px square under a large glyph.
         const float utilHit = fullScreen
             ? std::clamp(ctx.fullArtSize * 0.055f, 10.f, 20.f) : Px(11.f);
         ImGui::SetCursorScreenPos(ImVec2(center.x - utilHit, center.y - utilHit));
@@ -300,8 +246,6 @@ void DrawTransportControls(const TransportContext& ctx) {
             ImGui::GetID("##ug"), clicked);
         const float press = music_host::animation::PressPulse(
             ImGui::GetID("##up"), clicked);
-        // The two bubble marks are solid chips in the reference; a disc behind
-        // them just muddies their edge, so only the stroked marks get one.
         const bool bubble = (icon == 3 || icon == 4);
         const float fill = std::max(hv, selected ? 1.f : 0.f);
         if (fill > 0.01f && !bubble && !(fullScreen && selected))
@@ -315,8 +259,6 @@ void DrawTransportControls(const TransportContext& ctx) {
         const float utilGlyph = fullScreen
             ? std::clamp(ctx.fullArtSize * 0.035f, 5.7f, 13.f)
             : (compactMusic ? 6.4f : 7.4f) * S;
-        // A filled chip at 132 alpha reads as washed-out grey, where the
-        // reference's bubbles are near-solid white whether or not lyrics are on.
         const int glyphAlpha = bubble
             ? (selected ? 244 : (int)(206 + 40 * hv))
             : (selected ? 232 : (int)(132 + 74 * hv));
@@ -331,16 +273,6 @@ void DrawTransportControls(const TransportContext& ctx) {
     bool shuffleClicked = false;
     bool repeatClicked = false;
     bool lyricsClicked = false;
-    // Shuffle and repeat are anchored to the TRANSPORT ROW, not to the card
-    // edges. They used to sit at fixed insets (wp.x + 75, ws.x - 70) while the
-    // row stayed centred, so on a narrow card the row grew out to meet them and
-    // next/repeat drew on top of each other. Placing them one gap outside the
-    // outermost transport button makes an overlap geometrically impossible, and
-    // the clamp keeps them inside the card when it is very small.
-    // One even step between all five marks: shuffle | prev | play | next |
-    // repeat sit at cx + k*controlSpacing. Using a smaller side gap put shuffle
-    // and repeat much closer to prev/next than prev/next were to play, so the
-    // row read as three groups instead of one evenly spaced set.
     const float sideGap = controlSpacing;
     const float edgeInset = Px(compactMusic ? 18.f : 20.f);
     const float shuffleX = std::max(wp.x + edgeInset, cx - controlSpacing - sideGap);
@@ -354,27 +286,16 @@ void DrawTransportControls(const TransportContext& ctx) {
     } else {
         fullScreenClicked = !fullScreen && utilityButton(
             "fullscreen_toggle", ImVec2(wp.x + edgeInset, cy), 0, false);
-        // In fullscreen these used to be pinned to the ends of the progress bar
-        // while prev/play/next stayed on their even step, so the row came out as
-        // 38/56/56/35 instead of one rhythm. The reference's five marks are
-        // evenly spaced, so shuffle and repeat take the same step as the rest.
         shuffleClicked = utilityButton(
             "shuffle_toggle",
             ImVec2(fullScreen ? shuffleX
                               : std::max(wp.x + edgeInset + Px(24.f), shuffleX), cy),
             1, ctx.shuffleActive);
-        // Repeat is pulled further in than before: the right end of the row now
-        // carries TWO bubbles rather than one, and at the old clamp repeat sat
-        // exactly where the "Aa" chip goes.
         repeatClicked = utilityButton(
             "repeat_toggle",
             ImVec2(fullScreen ? repeatX
                               : std::min(wp.x + ws.x - edgeInset - Px(46.f), repeatX), cy),
             2, ctx.repeatActive);
-        // The reference pairs the lyrics bubble with an "Aa" bubble: bottom
-        // right of the panel row (Aa then quote), bottom left in fullscreen
-        // (quote then Aa). Extra clearance from the right edge keeps the quote
-        // off the resize grip in the corner.
         const float bubbleGap = fullScreen
             ? std::clamp(ctx.fullArtSize * 0.09f, 22.f, 46.f) : Px(22.f);
         const float quoteX = fullScreen ? wp.x + Px(16.f)

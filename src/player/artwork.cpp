@@ -20,10 +20,6 @@ ID3D11Texture2D*          s_artTex = nullptr;
 ID3D11ShaderResourceView* s_atmosphereSrv = nullptr;
 ID3D11Texture2D*          s_atmosphereTex = nullptr;
 float                     s_atmosphereFade = 1.f;
-// Artwork mode draws the real full-resolution cover, which would otherwise end
-// in a hard horizontal edge where the art stops and the card continues. This
-// second, alpha-ramped copy of the atmosphere is laid over the cover's lower
-// third so the art dissolves into the card instead of being cut off.
 ID3D11ShaderResourceView* s_artworkFadeSrv = nullptr;
 ID3D11Texture2D*          s_artworkFadeTex = nullptr;
 int s_artW = 0, s_artH = 0;
@@ -41,17 +37,6 @@ void ReleaseAtmosphereTexture() {
 }
 
 bool UploadArtTexture(ID3D11Device* dev, const media::NowPlaying& np) {
-    // Full mip chain, not a single level.
-    //
-    // Covers arrive at a few hundred pixels square and the compact header draws
-    // them at ~48px. With one mip level the sampler takes a single texel out of
-    // every ~13, so the thumbnail came out visibly blocky and crawling with
-    // aliasing -- obvious next to the reference, whose thumbnail is clean.
-    // Mips let the GPU sample a properly downscaled level instead.
-    //
-    // GenerateMips writes into the texture, so it cannot be IMMUTABLE and needs
-    // RENDER_TARGET binding; mip 0 is uploaded separately rather than passed as
-    // initial data.
     D3D11_TEXTURE2D_DESC td = {};
     td.Width = np.artW; td.Height = np.artH;
     td.MipLevels = 0;                       // 0 = full chain down to 1x1
@@ -152,11 +137,6 @@ void BuildAtmosphereTexture(ID3D11Device* dev, const media::NowPlaying& np) {
         }
         atmosphere.swap(scratch);
     };
-    // Blur hard. The blurred cover is what separates white text from the card --
-    // any structure left in it competes with the glyphs and the text stops
-    // reading. Four passes at a wider radius leave a smooth wash with no
-    // recognisable shapes, which is what the reference sits its lyrics on.
-    // Cost is irrelevant: this runs once per track, not per frame.
     for (int pass = 0; pass < 4; ++pass) {
         blurAxis(true, 34);
         blurAxis(false, 34);
@@ -182,10 +162,6 @@ void BuildAtmosphereTexture(ID3D11Device* dev, const media::NowPlaying& np) {
         s_atmosphereFade = 0.f;
     }
 
-    // Same blurred atmosphere, but lifted and desaturated so it reads as haze
-    // rather than a second image, and ramped from fully transparent at 40% of
-    // the height to opaque by 67%. Smoothstep on the ramp -- a linear alpha
-    // leaves a visible band where the gradient starts.
     std::vector<uint8_t> artworkFade = atmosphere;
     for (int y = 0; y < kAtmosphereSide; ++y) {
         const float ny = (float)y / (float)(kAtmosphereSide - 1);

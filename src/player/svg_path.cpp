@@ -1,14 +1,4 @@
-// Minimal SVG <path d="..."> renderer for the player icons.
-//
-// The icons are authored as real SVGs (Bootstrap Icons, MIT, plus one custom
-// bubble) kept in assets/icons/. Their shapes rely on small arcs to round every
-// corner -- a Bootstrap play triangle has three ROUNDED tips, not three points.
-// Reimplementing them as hand-placed triangles is what made the transport row
-// look spiky next to the real player, so the path data is parsed and flattened
-// here rather than approximated.
-//
-// Supported: M m L l H h V v C c S s Q q T t A a Z z -- everything the icon set
-// uses, plus the shorthand forms so hand-edited files keep working.
+// SVG path fill/stroke for the icon set (Bootstrap Icons, MIT)
 
 #include "music_player_internal.h"
 
@@ -32,9 +22,6 @@ void SkipSep(Cursor& c) {
         ++c.p;
 }
 
-// SVG numbers can run together with no separator: "1.5.5" is 1.5 then .5, and
-// "3-4" is 3 then -4. strtod alone would swallow the following number's leading
-// sign or dot, so the extent is scanned explicitly first.
 bool ReadNumber(Cursor& c, float& out) {
     SkipSep(c);
     if (c.p >= c.end) return false;
@@ -75,8 +62,6 @@ void Cubic(std::vector<ImVec2>& pts, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3)
     }
 }
 
-// Endpoint-parameterised arc -> centre form, per the SVG spec implementation
-// notes. Every rounded corner in these icons is one of these.
 void Arc(std::vector<ImVec2>& pts, ImVec2 p0, float rx, float ry,
          float rotDeg, bool largeArc, bool sweep, ImVec2 p1) {
     if (rx == 0.f || ry == 0.f) { pts.push_back(p1); return; }
@@ -229,14 +214,6 @@ void FlattenSvgPath(const char* d, std::vector<std::vector<ImVec2>>& outSubpaths
 
 namespace {
 
-// ImGui's concave fill (ImTriangulator) classifies a corner as reflex unless
-// ImTriangleIsClockwise(prev, cur, next), so it only triangulates CLOCKWISE
-// polygons. Hand a counter-clockwise outline to it and every vertex looks
-// reflex, no ear is ever found, and the glyph collapses to its bounding box --
-// which is why the skip marks first filled as solid rectangles.
-//
-// SVG has no winding guarantee, so the winding is normalised here instead.
-// In screen space (Y down) a positive shoelace sum IS clockwise.
 float SignedArea(const std::vector<ImVec2>& p) {
     float a = 0.f;
     for (size_t i = 0, n = p.size(); i < n; ++i) {
@@ -263,8 +240,6 @@ void DrawSvgIcon(ImDrawList* dl, const char* pathData, ImVec2 center,
         for (size_t i = 0; i < sp.size(); ++i)
             poly.push_back(ImVec2(center.x + (sp[i].x - half) * k,
                                   center.y + (sp[i].y - half) * k));
-        // Drop a duplicated closing vertex: it makes one corner degenerate and
-        // the triangulator can stall on it.
         if (poly.size() > 1) {
             const float dx = poly.front().x - poly.back().x;
             const float dy = poly.front().y - poly.back().y;
@@ -273,9 +248,6 @@ void DrawSvgIcon(ImDrawList* dl, const char* pathData, ImVec2 center,
         if (poly.size() < 3) continue;
         if (SignedArea(poly) < 0.f)
             std::reverse(poly.begin(), poly.end());   // -> clockwise
-        // One fill with one outer fringe. Filling triangle-by-triangle instead
-        // leaves an AA seam on every shared edge, which at icon size reads as
-        // the glyph being shredded.
         dl->AddConcavePolyFilled(poly.data(), (int)poly.size(), col);
     }
 }

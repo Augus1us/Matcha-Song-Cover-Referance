@@ -103,20 +103,7 @@ void EndFrame() {
 
 void InitializeFonts() {
     ImGuiIO& io = ImGui::GetIO();
-    // The reference sets its type in SF Pro. SF Pro is Apple's and cannot be
-    // redistributed, so Inter is bundled instead -- it is the typeface designed
-    // as an SF Pro stand-in, and its SIL Open Font Licence explicitly permits
-    // shipping it alongside software. See assets/fonts/LICENSE.txt.
-    //
-    // Regular and SEMIBOLD, matching how Apple sets body and titles. Bold is a
-    // step too heavy and made the card read chunkier than the reference.
-    //
-    // Falls back to what Windows ships if the bundled files are missing, so a
-    // stripped checkout still runs: Segoe UI Variable first (Microsoft's own
-    // answer to SF Pro), then classic Segoe UI.
-    // Forward slashes throughout: the Windows file APIs accept them, and a
-    // backslash escape in this file has been silently collapsed more than once
-    // in editing, which turns the path into garbage the loader cannot find.
+    // Inter (SIL OFL) stands in for SF Pro, which cannot be redistributed.
     const char* kRegular[] = {
         "assets/fonts/Inter-Regular.ttf",
         "../assets/fonts/Inter-Regular.ttf",
@@ -273,10 +260,6 @@ namespace overlay {
 HWND GetOverlayWindow() { return g_window; }
 void* GetD3DDevice() { return preview::Device(); }
 
-// Borderless fullscreen: drop the frame and stretch the window over the whole
-// monitor, remembering the previous placement and style so it restores exactly.
-// This is the standard Raymond-Chen toggle rather than SW_MAXIMIZE, which keeps
-// the title bar and only fills the work area.
 static bool g_windowFullscreen = false;
 static WINDOWPLACEMENT g_prevPlacement = { sizeof(WINDOWPLACEMENT) };
 static LONG_PTR g_prevStyle = 0;
