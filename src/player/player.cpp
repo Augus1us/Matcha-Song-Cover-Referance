@@ -250,7 +250,11 @@ void DrawMusicPlayer() {
 
     const float dragLeft = detail::Px(fullScreen ? 12.f
         : (artworkView ? 48.f : (compactMode ? 76.f : 74.f)));
-    const float dragRightReserve = detail::Px(fullScreen ? 76.f : 0.f);
+    // Artwork view reserves the right end too: the Aa button lives there and the
+    // drag strip took ActiveId on mouse-down before the header ran, so Aa could
+    // never be clicked.
+    const float dragRightReserve = detail::Px(
+        fullScreen ? 76.f : (artworkView ? 46.f : 0.f));
     const float dragHeight = detail::Px(fullScreen ? 46.f
         : (artworkView ? 38.f : (compactMode ? 68.f : 76.f)));
     ImGui::SetCursorScreenPos(ImVec2(wp.x + dragLeft, wp.y));
